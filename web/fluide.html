@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FUNANIM — Animation fluide v0.3 · DEVONE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{--encre:#0D1026;--panneau:#151A38;--ligne:#262C55;--signal:#FFD60A;
+    --texte:#E8E9F2;--texte-2:#9AA0C3}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--encre);color:var(--texte);font-family:'Manrope',system-ui,sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 14px 40px}
+  header{width:100%;max-width:980px;display:flex;align-items:baseline;justify-content:space-between;padding:20px 2px 14px}
+  .marque{font-weight:800;font-size:20px}
+  .marque em{font-style:normal;color:var(--signal)}
+  .version{font-size:11px;font-weight:600;letter-spacing:.18em;color:var(--texte-2);text-transform:uppercase}
+  .cadre{width:100%;max-width:980px;background:var(--panneau);border:1px solid var(--ligne);border-radius:14px;overflow:hidden}
+  canvas{display:block;width:100%;height:auto;background:#EDEAE0}
+  .section{width:100%;max-width:980px;margin-top:20px}
+  .grille{display:flex;gap:8px;flex-wrap:wrap}
+  button{font-family:inherit;font-weight:600;font-size:13px;background:transparent;color:var(--texte);
+    border:1px solid var(--ligne);border-radius:10px;padding:8px 14px;cursor:pointer;
+    transition:border-color .15s,background .15s,color .15s}
+  button:hover{border-color:var(--signal)}
+  button:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+  button.actif{background:var(--signal);color:#171400;border-color:var(--signal)}
+  .note{width:100%;max-width:980px;margin-top:24px;font-size:13px;line-height:1.65;color:var(--texte-2)}
+  .note b{color:var(--texte)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="marque">FUN<em>ANIM</em> · animation fluide</div>
+  <div class="version">labo v0.3 — DEVONE</div>
+</header>
+
+<div class="cadre"><canvas id="scene" width="1280" height="720"></canvas></div>
+
+<div class="section"><div class="grille" id="modes"></div></div>
+
+<div class="note">
+  <b>En haut : l'ancien moteur (v0.2)</b> — cycle de poses-clés : regarde les pieds, ils
+  <b>glissent</b> sur le sol. <b>En bas : le nouveau moteur (v0.3)</b> — locomotion
+  procédurale : chaque pied choisit un point d'appui et y reste <b>planté</b> par cinématique
+  inverse (IK) pendant que le corps avance ; le bassin monte et descend selon les phases
+  Contact / Down / Passing / Up ; les bras et la tête suivent avec un léger retard
+  (follow-through) ; le pied en balancement décrit un <b>arc</b> ; chaque appui soulève
+  un nuage de <b>poussière</b> ; le saut a une <b>anticipation</b> (flexion avant l'impulsion)
+  et du <b>squash &amp; stretch</b> (étiré en l'air, écrasé à l'atterrissage). Ce moteur
+  remplacera les cycles de marche/course/saut de la bibliothèque — les autres actions
+  (danser, rire, saluer…) restent en poses-clés, enrichies des mêmes principes.
+</div>
+
+<script>
+/* ================================================================
+   FUNANIM v0.3 — LABO ANIMATION FLUIDE
+   Haut : ancien cycle keyframe. Bas : locomotion procédurale IK.
+   ================================================================ */
+const DEG=Math.PI/180;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,u)=>a+(b-a)*u;
+const easeIO=u=>0.5-0.5*Math.cos(Math.PI*u);
+const TAU=Math.PI*2;
+
+const cv=document.getElementById('scene'),ctx=cv.getContext('2d');
+const W=cv.width,Hc=cv.height;
+const INK='#14162B';
+
+/* ---------- proportions ---------- */
+const H=250;                 // hauteur du personnage
+const R=0.108*H;             // rayon tête
+const SPINE=0.25*H, NECK=0.055*H;
+const UA=0.16*H, FA=0.155*H; // bras
+const TH=0.235*H, SH=0.235*H;// jambe
+const HIPH=(TH+SH)*0.965;    // hauteur de hanche debout
+const LW=0.052*H;
+
+/* ================================================================
+   ANCIEN MOTEUR (v0.2) — cycle keyframe (pour comparaison)
+   ================================================================ */
+const BASE={sp:2,hd:0,dy:0,saL:7,eaL:9,saR:-6,eaR:9,hhL:3,kkL:6,hhR:-3,kkR:6};
+const CYCLES={
+  marcher:{periode:.8,cles:[
+    {p:0,pose:{hhL:-26,kkL:8,hhR:26,kkR:16,saL:22,eaL:14,saR:-20,eaR:20,dy:.012,sp:4}},
+    {p:.25,pose:{hhL:2,kkL:32,hhR:6,kkR:6,saL:2,eaL:12,saR:-2,eaR:12,dy:.03,sp:4}},
+    {p:.5,pose:{hhL:26,kkL:16,hhR:-26,kkR:8,saL:-20,eaL:20,saR:22,eaR:14,dy:.012,sp:4}},
+    {p:.75,pose:{hhL:6,kkL:6,hhR:2,kkR:32,saL:-2,eaL:12,saR:2,eaR:12,dy:.03,sp:4}},
+    {p:1,pose:{hhL:-26,kkL:8,hhR:26,kkR:16,saL:22,eaL:14,saR:-20,eaR:20,dy:.012,sp:4}}]},
+  courir:{periode:.55,cles:[
+    {p:0,pose:{hhL:-40,kkL:24,hhR:46,kkR:64,saL:36,eaL:84,saR:-30,eaR:78,dy:.02,sp:12}},
+    {p:.25,pose:{hhL:6,kkL:52,hhR:14,kkR:40,saL:6,eaL:80,saR:-6,eaR:80,dy:.075,sp:12}},
+    {p:.5,pose:{hhL:46,kkL:64,hhR:-40,kkR:24,saL:-30,eaL:78,saR:36,eaR:84,dy:.02,sp:12}},
+    {p:.75,pose:{hhL:14,kkL:40,hhR:6,kkR:52,saL:-6,eaL:80,saR:6,eaR:80,dy:.075,sp:12}},
+    {p:1,pose:{hhL:-40,kkL:24,hhR:46,kkR:64,saL:36,eaL:84,saR:-30,eaR:78,dy:.02,sp:12}}]},
+  sauter:{periode:1.6,cles:[
+    {p:0,pose:{}},
+    {p:.2,pose:{dy:-.085,kkL:52,kkR:52,hhL:18,hhR:18,sp:15,saL:-28,saR:-32}},
+    {p:.33,pose:{dy:.21,hhL:6,hhR:6,kkL:5,kkR:5,saL:150,saR:146,sp:-4}},
+    {p:.48,pose:{dy:.30,hhL:42,hhR:38,kkL:66,kkR:70,saL:118,saR:112,sp:2}},
+    {p:.66,pose:{dy:.02,hhL:12,hhR:12,kkL:42,kkR:42,saL:22,saR:18,sp:8}},
+    {p:.8,pose:{dy:-.05,kkL:30,kkR:30,sp:6}},{p:1,pose:{dy:0,kkL:8,kkR:8}}]}
+};
+function poseCycle(id,t){
+  const a=CYCLES[id],phase=(t%a.periode)/a.periode,cles=a.cles;
+  let k1=cles[0],k2=cles[cles.length-1];
+  for(let i=0;i<cles.length-1;i++)if(phase>=cles[i].p&&phase<=cles[i+1].p){k1=cles[i];k2=cles[i+1];break;}
+  const span=(k2.p-k1.p)||1,u=easeIO(clamp((phase-k1.p)/span,0,1)),out={};
+  for(const ch in BASE){
+    const v1=(ch in k1.pose)?k1.pose[ch]:BASE[ch],v2=(ch in k2.pose)?k2.pose[ch]:BASE[ch];
+    out[ch]=lerp(v1,v2,u);
+  }
+  return out;
+}
+function jointsDepuisPose(x,solY,pose){
+  const f=1;
+  const hip={x,y:solY-HIPH-pose.dy*H};
+  const up=(d,l)=>({dx:f*Math.sin(d*DEG)*l,dy:-Math.cos(d*DEG)*l});
+  const dn=(d,l)=>({dx:f*Math.sin(d*DEG)*l,dy:Math.cos(d*DEG)*l});
+  const dSp=up(pose.sp,SPINE),chest={x:hip.x+dSp.dx,y:hip.y+dSp.dy};
+  const dHd=up(pose.sp*.6+pose.hd,NECK+R),tete={x:chest.x+dHd.dx,y:chest.y+dHd.dy};
+  const mem=(px,py,a1,l1,a2,l2)=>{
+    const d1=dn(a1,l1),j={x:px+d1.dx,y:py+d1.dy};
+    const d2=dn(a1-a2,l2);return [j,{x:j.x+d2.dx,y:j.y+d2.dy}];};
+  const br=(sa,ea)=>{
+    const d1=dn(sa,UA),c={x:chest.x+d1.dx,y:chest.y+d1.dy};
+    const d2=dn(sa+ea,FA);return [c,{x:c.x+d2.dx,y:c.y+d2.dy}];};
+  const [kR,fR]=mem(hip.x,hip.y,pose.hhR,TH,pose.kkR,SH);
+  const [kL,fL]=mem(hip.x,hip.y,pose.hhL,TH,pose.kkL,SH);
+  const [cR,mR]=br(pose.saR,pose.eaR);
+  const [cL,mL]=br(pose.saL,pose.eaL);
+  return {hip,chest,tete,kR,fR,kL,fL,cR,mR,cL,mL};
+}
+
+/* ================================================================
+   NOUVEAU MOTEUR (v0.3) — locomotion procédurale
+   Pieds plantés (IK 2 os) + Contact/Down/Passing/Up + follow-through
+   ================================================================ */
+function ik2os(px,py,tx,ty,l1,l2,sens){
+  // résout genou/coude : racine (px,py) → cible (tx,ty)
+  let dx=tx-px,dy=ty-py,D=Math.hypot(dx,dy);
+  D=clamp(D,Math.abs(l1-l2)+.5,l1+l2-.5);
+  const ux=dx/(Math.hypot(dx,dy)||1),uy=dy/(Math.hypot(dx,dy)||1);
+  const cosA=clamp((l1*l1+D*D-l2*l2)/(2*l1*D),-1,1);
+  const sinA=Math.sqrt(1-cosA*cosA);
+  const jx=px+ux*(l1*cosA)-uy*(l1*sinA)*sens;
+  const jy=py+uy*(l1*cosA)+ux*(l1*sinA)*sens;
+  // cible recadrée à la portée
+  const ex=px+ux*D,ey=py+uy*D;
+  return {j:{x:jx,y:jy},e:{x:ex,y:ey}};
+}
+
+/* démarche : appuis calculés sans état (sûr au seek) */
+function pied(t,phi,v,cycleT,stance,solY,laneX0,arcH){
+  const reach=v*stance*cycleT/2;         // portée d'appui → zéro glissement
+  const u=(t/cycleT+phi)%1;
+  const n=Math.floor(t/cycleT+phi);
+  const tPlant=(n-phi)*cycleT;           // instant du contact courant
+  const plantX=laneX0+v*tPlant+reach;    // point d'appui mondial (fixe)
+  if(u<stance){
+    return {x:plantX,y:solY,appui:true,plantX,tPlant,u};
+  }
+  // balancement : de l'ancien appui au prochain, en arc (principe des arcs)
+  const w=(u-stance)/(1-stance);
+  const we=easeIO(w);
+  const prochainX=plantX+v*cycleT;       // prochain appui
+  return {
+    x:lerp(plantX,prochainX,we),
+    y:solY-Math.sin(w*Math.PI)*arcH,
+    appui:false,plantX,tPlant,u
+  };
+}
+
+function locomotion(t,mode,solY,laneX0){
+  const P=mode==='courir'
+    ?{v:330,cycleT:.5,stance:.34,arcH:.16*H,bob:.05*H,lean:14,armA:44,armE:82,down:.02*H}
+    :{v:170,cycleT:.75,stance:.62,arcH:.075*H,bob:.022*H,lean:5,armA:26,armE:16,down:.012*H};
+  const bodyX=laneX0+P.v*t;
+  const fG=pied(t,0,P.v,P.cycleT,P.stance,solY,laneX0,P.arcH);
+  const fD=pied(t,.5,P.v,P.cycleT,P.stance,solY,laneX0,P.arcH);
+
+  // bassin : Down juste après le contact, Up au passage (mécanique de poids)
+  const ph=TAU*(t/P.cycleT);
+  let hipY=solY-HIPH+P.down - P.bob*Math.cos(2*ph - .6);
+  // course : phases de vol → bassin porté par la balistique
+  const enVol=!fG.appui&&!fD.appui;
+  if(enVol)hipY-=P.bob*1.4;
+  const hip={x:bodyX,y:hipY};
+
+  // buste penché + oscillation, tête en follow-through (retard de phase)
+  const sp=P.lean+1.6*Math.sin(2*ph);
+  const hd=2.2*Math.sin(2*ph-1.1);
+  const up=(d,l)=>({dx:Math.sin(d*DEG)*l,dy:-Math.cos(d*DEG)*l});
+  const dSp=up(sp,SPINE),chest={x:hip.x+dSp.dx,y:hip.y+dSp.dy};
+  const dHd=up(sp*.6+hd,NECK+R),tete={x:chest.x+dHd.dx,y:chest.y+dHd.dy};
+
+  // jambes : IK vers les appuis
+  const L=ik2os(hip.x,hip.y,fG.x,fG.y,TH,SH,1);
+  const D2=ik2os(hip.x,hip.y,fD.x,fD.y,TH,SH,1);
+
+  // bras : opposés aux jambes, coude en retard (overlap)
+  const swing=Math.sin(ph);
+  const saL=P.armA*swing, saR=-P.armA*swing;
+  const eaL=P.armE+14*Math.sin(ph-.7), eaR=P.armE+14*Math.sin(ph+Math.PI-.7);
+  const dn=(d,l)=>({dx:Math.sin(d*DEG)*l,dy:Math.cos(d*DEG)*l});
+  const br=(sa,ea)=>{
+    const d1=dn(sa,UA),c={x:chest.x+d1.dx,y:chest.y+d1.dy};
+    const d2=dn(sa+ea,FA);return [c,{x:c.x+d2.dx,y:c.y+d2.dy}];};
+  const [cL,mL]=br(saL,eaL),[cR,mR]=br(saR,eaR);
+
+  return {hip,chest,tete,kL:L.j,fL:L.e,kR:D2.j,fR:D2.e,cL,mL,cR,mR,
+          bodyX,fG,fD,P};
+}
+
+/* saut sur place : anticipation + squash & stretch + IK au sol */
+function saut(t,solY,cx){
+  const T=1.7,u=(t%T)/T;
+  // hauteur du bassin + échelle (squash/stretch)
+  let dy=0,sx=1,sy=1,bras=0,tuck=0,poussiere=0;
+  if(u<.18){            // ANTICIPATION : flexion, bras en arrière
+    const w=easeIO(u/.18);dy=-.10*H*w;sx=1+.05*w;sy=1-.05*w;bras=-40*w;
+  }else if(u<.30){      // IMPULSION : stretch vertical
+    const w=easeIO((u-.18)/.12);dy=lerp(-.10*H,.30*H,w);
+    sy=1+.14*(1-Math.abs(w-.5)*2)+.04;sx=2-sy;bras=lerp(-40,150,w);
+  }else if(u<.52){      // VOL : tuck
+    const w=(u-.30)/.22;dy=.30*H+.06*H*Math.sin(w*Math.PI);
+    bras=150-30*w;tuck=Math.sin(w*Math.PI);
+  }else if(u<.62){      // ATTERRISSAGE : squash
+    const w=easeIO((u-.52)/.10);dy=lerp(.30*H,-.07*H,w);
+    sy=1-.16*w;sx=1+.16*w;bras=lerp(120,20,w);
+    if(w>.85)poussiere=1;
+  }else if(u<.78){      // absorption + poussière
+    const w=easeIO((u-.62)/.16);dy=lerp(-.07*H,0,w);
+    sy=lerp(.84,1,w);sx=lerp(1.16,1,w);bras=lerp(20,6,w);poussiere=1;
+  }else{                // repos
+    dy=0;
+  }
+  const hip={x:cx,y:solY-HIPH-dy};
+  const enAir=(u>=.26&&u<.56);
+  // jambes : IK au sol si contact, repliées en vol
+  let L,D2;
+  if(enAir){
+    const k=.55+.35*tuck;
+    L=ik2os(hip.x,hip.y,hip.x+18,hip.y+(TH+SH)*k,TH,SH,1);
+    D2=ik2os(hip.x,hip.y,hip.x-6,hip.y+(TH+SH)*(k+.06),TH,SH,1);
+  }else{
+    L=ik2os(hip.x,hip.y,cx+14,solY,TH,SH,1);
+    D2=ik2os(hip.x,hip.y,cx-14,solY,TH,SH,1);
+  }
+  const sp=(u<.18)?14*easeIO(u/.18):(enAir?-2:6);
+  const up=(d,l)=>({dx:Math.sin(d*DEG)*l,dy:-Math.cos(d*DEG)*l});
+  const dSp=up(sp,SPINE),chest={x:hip.x+dSp.dx,y:hip.y+dSp.dy};
+  const dHd=up(sp*.6,NECK+R),tete={x:chest.x+dHd.dx,y:chest.y+dHd.dy};
+  const dn=(d,l)=>({dx:Math.sin(d*DEG)*l,dy:Math.cos(d*DEG)*l});
+  const br=sa=>{
+    const d1=dn(sa,UA),c={x:chest.x+d1.dx,y:chest.y+d1.dy};
+    const d2=dn(sa+12,FA);return [c,{x:c.x+d2.dx,y:c.y+d2.dy}];};
+  const [cL,mL]=br(bras),[cR,mR]=br(bras-6);
+  return {hip,chest,tete,kL:L.j,fL:L.e,kR:D2.j,fR:D2.e,cL,mL,cR,mR,
+          sx,sy,ancre:{x:cx,y:solY},poussiere,u};
+}
+
+/* ---------- rendu stick depuis des articulations ---------- */
+function renduJoints(ctx,J,couleur,echelle){
+  ctx.save();
+  if(echelle){ // squash & stretch autour du point d'ancrage au sol
+    ctx.translate(echelle.ancre.x,echelle.ancre.y);
+    ctx.scale(echelle.sx,echelle.sy);
+    ctx.translate(-echelle.ancre.x,-echelle.ancre.y);
+  }
+  ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle=couleur;ctx.lineWidth=LW;
+  const tr=(a,b,c)=>{ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.stroke();};
+  ctx.globalAlpha=.72;tr(J.hip,J.kR,J.fR);tr(J.chest,J.cR,J.mR);ctx.globalAlpha=1;
+  tr(J.hip,J.kL,J.fL);
+  ctx.beginPath();ctx.moveTo(J.hip.x,J.hip.y);ctx.lineTo(J.chest.x,J.chest.y);ctx.stroke();
+  tr(J.chest,J.cL,J.mL);
+  ctx.beginPath();ctx.arc(J.tete.x,J.tete.y,R,0,TAU);ctx.fillStyle=couleur;ctx.fill();
+  // visage simple
+  ctx.fillStyle='#F2F0E9';ctx.strokeStyle='#F2F0E9';
+  const fx=J.tete.x+R*.16,fy=J.tete.y-R*.08;
+  ctx.beginPath();ctx.arc(fx-R*.26,fy-R*.12,R*.10,0,TAU);ctx.fill();
+  ctx.beginPath();ctx.arc(fx+R*.30,fy-R*.12,R*.10,0,TAU);ctx.fill();
+  ctx.lineWidth=LW*.34;
+  ctx.beginPath();ctx.arc(fx,fy+R*.24,R*.30,.15*Math.PI,.85*Math.PI);ctx.stroke();
+  ctx.restore();
+}
+function ombre(ctx,x,solY,dy){
+  const w=.30*H*(1-clamp(dy/H,0,.35)*1.4);
+  ctx.fillStyle='rgba(13,16,38,0.14)';
+  ctx.beginPath();ctx.ellipse(x,solY+.012*H,w,.045*H,0,0,TAU);ctx.fill();
+}
+function poussiereAppui(ctx,x,solY,age){
+  if(age<0||age>.4)return;
+  const w=age/.4;
+  ctx.fillStyle=`rgba(160,150,125,${(1-w)*.55})`;
+  for(let k=0;k<3;k++){
+    const s=(k-1)*14*(1+w);
+    ctx.beginPath();ctx.arc(x+s-w*18,solY-4-w*16,4+w*12,0,TAU);ctx.fill();
+  }
+}
+function lignesVitesse(ctx,x,y,n){
+  ctx.strokeStyle='rgba(13,16,38,0.18)';ctx.lineWidth=3;
+  for(let k=0;k<n;k++){
+    const yy=y-40+k*26;
+    ctx.beginPath();ctx.moveTo(x-70,yy);ctx.lineTo(x-70-34-k*8,yy);ctx.stroke();
+  }
+}
+
+/* ---------- lanes ---------- */
+function fondLane(y0,y1,solY,titre){
+  const g=ctx.createLinearGradient(0,y0,0,y1);
+  g.addColorStop(0,'#F5F3EB');g.addColorStop(1,'#E7E3D6');
+  ctx.fillStyle=g;ctx.fillRect(0,y0,W,y1-y0);
+  ctx.fillStyle='#DBD6C6';ctx.fillRect(0,solY,W,y1-solY);
+  ctx.strokeStyle='rgba(13,16,38,0.18)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,solY);ctx.lineTo(W,solY);ctx.stroke();
+  // repères au sol pour rendre le glissement visible
+  ctx.fillStyle='rgba(13,16,38,0.10)';
+  for(let k=0;k<16;k++)ctx.fillRect(k*(W/16)+20,solY+18,26,5);
+  ctx.fillStyle='rgba(13,16,38,0.5)';ctx.textAlign='left';
+  ctx.font='800 17px Manrope,sans-serif';
+  ctx.fillText(titre,20,y0+30);
+}
+
+let mode='marcher',t=0,tPrec=performance.now();
+const PARCOURS=W+220;
+
+function boucleAnim(now){
+  const dt=Math.min((now-tPrec)/1000,.05);tPrec=now;t+=dt;
+  ctx.clearRect(0,0,W,Hc);
+  const sol1=300,sol2=660;
+  fondLane(0,360,sol1,'AVANT — v0.2 : cycle de poses (les pieds glissent)');
+  fondLane(360,720,sol2,'APRÈS — v0.3 : IK pieds plantés + squash & stretch + follow-through');
+
+  if(mode==='sauter'){
+    // haut : saut keyframe v0.2
+    const pose=poseCycle('sauter',t);
+    const J1=jointsDepuisPose(W*.5,sol1,pose);
+    ombre(ctx,W*.5,sol1,pose.dy*H);
+    renduJoints(ctx,J1,INK,null);
+    // bas : saut procédural avec anticipation + squash/stretch
+    const S=saut(t,sol2,W*.5);
+    ombre(ctx,W*.5,sol2,(sol2-HIPH-S.hip.y));
+    if(S.poussiere){
+      const uL=((t%1.7)/1.7-.52)*1.7;
+      poussiereAppui(ctx,W*.5-26,sol2,uL);poussiereAppui(ctx,W*.5+26,sol2,uL);
+    }
+    renduJoints(ctx,S,INK,{ancre:S.ancre,sx:S.sx,sy:S.sy});
+  }else{
+    const P=mode==='courir'?{v:330,periode:.55}:{v:170,periode:.8};
+    // haut : cycle keyframe translaté → glissement visible
+    const x1=((t*P.v)%PARCOURS)-110;
+    const pose=poseCycle(mode,t);
+    const J1=jointsDepuisPose(x1,sol1,pose);
+    ombre(ctx,x1,sol1,pose.dy*H);
+    renduJoints(ctx,J1,INK,null);
+    // bas : locomotion procédurale — le temps encode la position
+    const tLoop=t%(PARCOURS/ (mode==='courir'?330:170));
+    const L=locomotion(tLoop,mode,sol2,-110);
+    ombre(ctx,L.bodyX,sol2,(sol2-HIPH-L.hip.y));
+    // poussière à chaque appui
+    for(const f of [L.fG,L.fD]){
+      poussiereAppui(ctx,f.plantX,sol2,tLoop-f.tPlant);
+    }
+    if(mode==='courir')lignesVitesse(ctx,L.bodyX,L.hip.y,3);
+    renduJoints(ctx,L,INK,null);
+  }
+  requestAnimationFrame(boucleAnim);
+}
+
+/* ---------- UI ---------- */
+const grModes=document.getElementById('modes');
+const MODES={marcher:'Marcher',courir:'Courir',sauter:'Sauter'};
+let bM=[];
+for(const id in MODES){
+  const b=document.createElement('button');b.textContent=MODES[id];
+  b.addEventListener('click',()=>{mode=id;t=0;bM.forEach(([i,x])=>x.classList.toggle('actif',i===id));});
+  grModes.appendChild(b);bM.push([id,b]);
+}
+bM[0][1].classList.add('actif');
+requestAnimationFrame(boucleAnim);
+</script>
+</body>
+</html>

@@ -277,13 +277,13 @@ function renduJoints(ctx,J,couleur,echelle){
   ctx.beginPath();ctx.moveTo(J.hip.x,J.hip.y);ctx.lineTo(J.chest.x,J.chest.y);ctx.stroke();
   tr(J.chest,J.cL,J.mL);
   ctx.beginPath();ctx.arc(J.tete.x,J.tete.y,R,0,TAU);ctx.fillStyle=couleur;ctx.fill();
-  // visage simple
+  // visage — clairement orienté vers l'avant (sens du mouvement)
   ctx.fillStyle='#F2F0E9';ctx.strokeStyle='#F2F0E9';
-  const fx=J.tete.x+R*.16,fy=J.tete.y-R*.08;
-  ctx.beginPath();ctx.arc(fx-R*.26,fy-R*.12,R*.10,0,TAU);ctx.fill();
-  ctx.beginPath();ctx.arc(fx+R*.30,fy-R*.12,R*.10,0,TAU);ctx.fill();
+  const fx=J.tete.x+R*.34,fy=J.tete.y-R*.06;
+  ctx.beginPath();ctx.arc(fx-R*.34,fy-R*.14,R*.10,0,TAU);ctx.fill();
+  ctx.beginPath();ctx.arc(fx+R*.10,fy-R*.14,R*.11,0,TAU);ctx.fill();
   ctx.lineWidth=LW*.34;
-  ctx.beginPath();ctx.arc(fx,fy+R*.24,R*.30,.15*Math.PI,.85*Math.PI);ctx.stroke();
+  ctx.beginPath();ctx.arc(fx-R*.12,fy+R*.20,R*.26,.1*Math.PI,.8*Math.PI);ctx.stroke();
   ctx.restore();
 }
 function ombre(ctx,x,solY,dy){

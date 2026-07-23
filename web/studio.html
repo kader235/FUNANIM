@@ -323,6 +323,10 @@ function dessinerPersonnage(ctx,x,solY,H,pose,style,opts){
     ctx.lineTo(hip.x+w2,hip.y+hJ);ctx.lineTo(hip.x-w2,hip.y+hJ);ctx.closePath();ctx.fill();
   }
   tr(face?{x:chest.x-ecB,y:chest.y}:chest,couL,maiL);
+  if(opts.objet&&opts.objet.id){
+    const enMainG=(opts.objet.main==='gauche');
+    dessinerPropEnMain(ctx,enMainG?maiL:maiR,enMainG?couL:couR,f,H,opts.objet);
+  }
   if(face){ctx.beginPath();ctx.moveTo(chest.x-ecB,chest.y);ctx.lineTo(chest.x+ecB,chest.y);ctx.stroke();}
   ctx.beginPath();ctx.arc(tete.x,tete.y,R,0,TAU);ctx.fillStyle=ink;ctx.fill();
   if(genre==='femme'){
@@ -1103,7 +1107,24 @@ function dessinerScene(sc,tl,solY){
       break;
     }
   }
+  // caméra de scène : panoramique / suivi
+  let camDx=0,camK=1;
+  const cam=sc.camera||'fixe';
+  if(cam!=='fixe'&&sc.cadrage!=='gros_plan'){
+    const dSc=dureeScene(sc),u=clamp(tl/dSc,0,1);
+    camK=1.08;
+    if(cam==='pano_droite')camDx=lerp(W*.055,-W*.055,u);
+    else if(cam==='pano_gauche')camDx=lerp(-W*.055,W*.055,u);
+    else if(cam==='suivre'&&sc.acteurs[0]){
+      const st0=etatActeur(sc.acteurs[0],tl);
+      if(st0)camDx=clamp((0.5-st0.x)*W*.5,-W*.14,W*.14);
+    }
+  }
   ctx.save();
+  if(camK!==1){
+    ctx.translate(W/2,Hc/2);ctx.scale(camK,camK);ctx.translate(-W/2,-Hc/2);
+    ctx.translate(camDx,0);
+  }
   if(zoomCam){
     ctx.translate(zoomCam.x,zoomCam.y);ctx.scale(zoomCam.k,zoomCam.k);
     ctx.translate(-zoomCam.x,-zoomCam.y);
@@ -1134,6 +1155,7 @@ function dessinerScene(sc,tl,solY){
     }
     dessinerGrosPlan(sc,tl,boucheGP);
   }
+  if(sc.cadrage!=='gros_plan')for(const pr of (sc.props||[]))dessinerPropScene(ctx,pr,solY);
   const tetes={};
   let shake=false;
   for(const ac of sc.acteurs){
@@ -1165,7 +1187,7 @@ function dessinerScene(sc,tl,solY){
     dessinerOmbre(ctx,st.x*W,solY,H2,pose.dy,pose.rot);
     const res=dessinerPersonnage(ctx,st.x*W,solY,H2,pose,perso.style,
       {facing:st.facing,expression:st.expr,bouche,t:tl,fx:st.meta.fx,
-       jitter:st.meta.jitter?1:0,vue:ac.vue||'profil'});
+       jitter:st.meta.jitter?1:0,vue:ac.vue||'profil',objet:ac.objet});
     tetes[ac.id]=res;
   }
   if(sc.meteo)dessinerPluie(ctx,W,Hc,solY,tl);
@@ -1482,8 +1504,32 @@ function rendreInspecteur(){
     const lbl=el('span',{},sc.foule||'aucune');r3.append(lbl);
     const r4=el('div',{class:'rang'},el('label',{},'Transition'),
       selecteur({fondu:'Fondu',cut:'Cut'},sc.transition,v=>{sc.transition=v;}));
-    insp.append(r1,r2,r3,r4,
+    const rCam=el('div',{class:'rang'},el('label',{},'Caméra'),
+      selecteur({fixe:'Fixe',pano_droite:'Panoramique →',pano_gauche:'Panoramique ←',
+        suivre:'Suivre le 1er acteur'},sc.camera||'fixe',v=>{sc.camera=v;}));
+    insp.append(r1,r2,r3,r4,rCam,
       el('div',{class:'aide'},'La durée de la scène est automatique : elle suit la fin de la dernière action ou du dernier texte.'));
+    insp.append(el('div',{class:'etiq'},'Objets posés dans la scène'));
+    sc.props=sc.props||[];
+    const optsProps={};for(const k in PROPS)optsProps[k]=PROPS[k].nom;
+    sc.props.forEach((pr,i)=>{
+      const b=el('div',{class:'bloc'});
+      b.append(el('div',{class:'tete'},PROPS[pr.propId]?.nom||'Objet',
+        el('button',{class:'mini danger sup',onclick:()=>{sc.props.splice(i,1);rendreInspecteur();}},'✕')));
+      b.append(el('div',{class:'rang'},el('label',{},'Objet'),
+        selecteur(optsProps,pr.propId,v=>{pr.propId=v;})));
+      b.append(el('div',{class:'rang'},el('label',{},'Position X'),
+        el('input',{type:'range',min:0,max:1,step:.01,value:pr.x,oninput:e=>{pr.x=+e.target.value;}})));
+      b.append(el('div',{class:'rang'},el('label',{},'Taille'),
+        el('input',{type:'range',min:.4,max:2.2,step:.05,value:pr.taille||1,
+          oninput:e=>{pr.taille=+e.target.value;}}),
+        el('label',{},'Miroir'),
+        el('input',{type:'checkbox',...(pr.miroir?{checked:''}:{}),onchange:e=>{pr.miroir=e.target.checked;}})));
+      insp.append(b);
+    });
+    insp.append(el('button',{style:'width:100%',onclick:()=>{
+      sc.props.push({id:nid('pr'),propId:'chaise',x:.5,taille:1,miroir:false});
+      rendreInspecteur();}},'+ Poser un objet dans la scène'));
   }
 
   if(ongletActif==='acteurs'){
@@ -1514,6 +1560,14 @@ function rendreInspecteur(){
         selecteur({profil:'De profil',face:'De face'},ac.vue||'profil',v=>{ac.vue=v;})));
       insp.append(el('div',{class:'rang'},el('label',{},'Miroir'),
         el('input',{type:'checkbox',...(ac.miroir?{checked:''}:{}),onchange:e=>{ac.miroir=e.target.checked;}})));
+      const optsTen={'':'(aucun)'};
+      for(const k in PROPS)if(PROPS[k].tenable)optsTen[k]=PROPS[k].nom;
+      const rObj=el('div',{class:'rang'},el('label',{},'Objet en main'),
+        selecteur(optsTen,(ac.objet&&ac.objet.id)||'',v=>{
+          ac.objet=v?{id:v,main:(ac.objet&&ac.objet.main)||'droite'}:null;rendreInspecteur();}));
+      if(ac.objet&&ac.objet.id)rObj.append(selecteur({droite:'Main droite',gauche:'Main gauche'},
+        ac.objet.main||'droite',v=>{ac.objet.main=v;}));
+      insp.append(rObj);
 
       insp.append(el('div',{class:'etiq'},'Chronologie (les boutons !)'));
       let tCumul=0;
@@ -1706,6 +1760,84 @@ document.querySelectorAll('.onglets button').forEach(b=>{
 
 document.getElementById('formatVideo').addEventListener('change',e=>appliquerFormat(e.target.value));
 appliquerFormat(projet.meta.format||'9:16');
+/* ---------------- PROPS : objets en main et dans la scène ---------------- */
+const PROPS={
+  feuille:{nom:"📄 Feuille",tenable:true,dessiner(c,s){
+    c.save();c.rotate(-.12);
+    c.fillStyle='#FFF';c.strokeStyle='#0D1026';c.lineWidth=s*.05;
+    c.fillRect(-s*.35,-s*.95,s*.7,s*.9);c.strokeRect(-s*.35,-s*.95,s*.7,s*.9);
+    c.lineWidth=s*.035;
+    for(let k=1;k<5;k++){c.beginPath();c.moveTo(-s*.25,-s*.95+k*s*.17);
+      c.lineTo(s*.25,-s*.95+k*s*.17);c.stroke();}
+    c.restore();}},
+  stylo:{nom:"🖊 Stylo",tenable:true,dessiner(c,s){
+    c.save();c.rotate(.5);
+    c.fillStyle='#2450A8';c.fillRect(-s*.05,-s*.75,s*.1,s*.65);
+    c.fillStyle='#0D1026';
+    c.beginPath();c.moveTo(-s*.05,-s*.1);c.lineTo(s*.05,-s*.1);c.lineTo(0,s*.05);
+    c.closePath();c.fill();c.restore();}},
+  livre:{nom:"📕 Livre",tenable:true,dessiner(c,s){
+    c.fillStyle='#C0392B';c.strokeStyle='#0D1026';c.lineWidth=s*.05;
+    c.fillRect(-s*.45,-s*.75,s*.9,s*.65);c.strokeRect(-s*.45,-s*.75,s*.9,s*.65);
+    c.fillStyle='#FFF';c.fillRect(-s*.37,-s*.67,s*.74,s*.49);
+    c.strokeStyle='#0D1026';c.beginPath();c.moveTo(0,-s*.67);c.lineTo(0,-s*.18);c.stroke();}},
+  telephone:{nom:"📱 Téléphone",tenable:true,dessiner(c,s){
+    c.fillStyle='#1B1E33';c.beginPath();
+    c.roundRect(-s*.22,-s*.85,s*.44,s*.8,s*.08);c.fill();
+    c.fillStyle='#4FA8FF';c.beginPath();
+    c.roundRect(-s*.17,-s*.78,s*.34,s*.62,s*.05);c.fill();}},
+  sac:{nom:"🎒 Sac",tenable:true,dessiner(c,s){
+    c.fillStyle='#2E9E6B';c.strokeStyle='#0D1026';c.lineWidth=s*.05;
+    c.beginPath();c.roundRect(-s*.4,-s*.9,s*.8,s*.85,s*.16);c.fill();c.stroke();
+    c.fillStyle='#237A52';
+    c.beginPath();c.roundRect(-s*.28,-s*.55,s*.56,s*.42,s*.1);c.fill();c.stroke();}},
+  ballon:{nom:"⚽ Ballon",tenable:true,dessiner(c,s){
+    c.fillStyle='#FFF';c.strokeStyle='#0D1026';c.lineWidth=s*.05;
+    c.beginPath();c.arc(0,-s*.42,s*.42,0,Math.PI*2);c.fill();c.stroke();
+    c.fillStyle='#0D1026';
+    c.beginPath();
+    for(let k=0;k<5;k++){const a=-Math.PI/2+k*Math.PI*2/5;
+      const px=Math.cos(a)*s*.16,py=-s*.42+Math.sin(a)*s*.16;
+      k?c.lineTo(px,py):c.moveTo(px,py);}
+    c.closePath();c.fill();}},
+  chaise:{nom:"🪑 Chaise",tenable:false,dessiner(c,s){
+    c.strokeStyle='#7A5A38';c.fillStyle='#9A7448';c.lineWidth=s*.09;
+    c.fillRect(-s*.42,-s*.62,s*.84,s*.1);
+    c.fillRect(s*.3,-s*1.25,s*.12,s*.63);
+    c.beginPath();c.moveTo(-s*.36,-s*.52);c.lineTo(-s*.4,0);c.stroke();
+    c.beginPath();c.moveTo(s*.36,-s*.52);c.lineTo(s*.4,0);c.stroke();}},
+  tasse:{nom:"☕ Tasse",tenable:true,dessiner(c,s){
+    c.fillStyle='#FF6B4A';c.strokeStyle='#0D1026';c.lineWidth=s*.05;
+    c.beginPath();c.roundRect(-s*.26,-s*.55,s*.52,s*.5,s*.06);c.fill();c.stroke();
+    c.beginPath();c.arc(s*.34,-s*.3,s*.14,-.5*Math.PI,.5*Math.PI);c.stroke();}},
+  micro:{nom:"🎤 Micro",tenable:true,dessiner(c,s){
+    c.fillStyle='#3A3F55';c.fillRect(-s*.06,-s*.55,s*.12,s*.5);
+    c.fillStyle='#8A8FBA';c.strokeStyle='#0D1026';c.lineWidth=s*.05;
+    c.beginPath();c.arc(0,-s*.68,s*.2,0,Math.PI*2);c.fill();c.stroke();}},
+  epee:{nom:"🗡 Épée",tenable:true,dessiner(c,s){
+    c.save();c.rotate(.4);
+    c.fillStyle='#C8CCE8';c.strokeStyle='#0D1026';c.lineWidth=s*.04;
+    c.beginPath();c.moveTo(-s*.06,-s*.25);c.lineTo(-s*.06,-s*1.15);c.lineTo(0,-s*1.3);
+    c.lineTo(s*.06,-s*1.15);c.lineTo(s*.06,-s*.25);c.closePath();c.fill();c.stroke();
+    c.fillStyle='#FFD60A';c.fillRect(-s*.2,-s*.25,s*.4,s*.09);
+    c.fillStyle='#7A5A38';c.fillRect(-s*.05,-s*.16,s*.1,s*.22);
+    c.restore();}}
+};
+function dessinerPropEnMain(c,mai,cou,f,H,objet){
+  const P=PROPS[objet.id];if(!P)return;
+  const ang=Math.atan2(mai.y-cou.y,mai.x-cou.x)-Math.PI/2;
+  c.save();c.translate(mai.x,mai.y);c.rotate(ang);c.scale(f,1);
+  P.dessiner(c,H*.22);c.restore();
+}
+function dessinerPropScene(c,pr,solY){
+  const P=PROPS[pr.propId];if(!P)return;
+  const s2=Hc*.40*.5*(pr.taille||1);
+  c.fillStyle='rgba(13,16,38,.12)';
+  c.beginPath();c.ellipse(pr.x*W,solY+6,s2*.5,s2*.09,0,0,TAU);c.fill();
+  c.save();c.translate(pr.x*W,solY);if(pr.miroir)c.scale(-1,1);
+  P.dessiner(c,s2);c.restore();
+}
+
 /* ---------------- ÉDITEUR DE POSES : le stickman maniable ---------------- */
 function ik2os(px,py,tx2,ty2,l1,l2,sens){
   let dx=tx2-px,dy=ty2-py,dd=Math.hypot(dx,dy)||.001;
@@ -1736,8 +1868,17 @@ function calculerJointsPE(x,solY,H,pose){
   const [genL,piedL]=mem(hip.x,hip.y,pose.hhL,thL,pose.kkL,shL);
   const [couR,maiR]=br(pose.saR,pose.eaR);
   const [couL,maiL]=br(pose.saL,pose.eaL);
-  return {hip,chest,tete,genR,piedR,genL,piedL,couR,maiR,couL,maiL,
-          mesures:{R,spineL,neckL,uaL,faL,thL,shL,hipH}};
+  const J={hip,chest,tete,genR,piedR,genL,piedL,genou:null,couR,maiR,couL,maiL};
+  if(pose.rot){
+    const a=pose.rot*DEG,ca=Math.cos(a),sa2=Math.sin(a);
+    for(const k in J){
+      if(!J[k]||k==='hip')continue;
+      const dx=J[k].x-hip.x,dy=J[k].y-hip.y;
+      J[k]={x:hip.x+dx*ca-dy*sa2,y:hip.y+dx*sa2+dy*ca};
+    }
+  }
+  J.mesures={R,spineL,neckL,uaL,faL,thL,shL,hipH};
+  return J;
 }
 function dlgEditeurPoses(ac){
   const perso=persoParId(ac.personnageId)||projet.personnages[0];
@@ -1754,13 +1895,20 @@ function dlgEditeurPoses(ac){
   const boucleChk=el('input',{type:'checkbox',checked:''});
   const listePoses=el('div',{});
   const msg=el('div',{class:'aide'},
-    'Attrape et déplace les poignées ⭘ : mains, pieds, tête, buste, bassin. '
+    'Attrape et déplace les poignées ⭘ : mains, pieds, tête, buste, bassin — et la poignée orange ↻ pour faire pivoter tout le corps (se pencher, s\'allonger). '
     +'Ajoute chaque position comme une pose : la suite de poses devient ton mouvement.');
 
   function poignees(){
     const J=calculerJointsPE(cx2,solY2,H2,poseCour);
+    const aR=(poseCour.rot||0)*DEG;
+    const rot={x:J.hip.x+Math.sin(aR)*H2*.86,y:J.hip.y-Math.cos(aR)*H2*.86};
     return {mainL:J.maiL,mainR:J.maiR,piedL:J.piedL,piedR:J.piedR,
-            tete:J.tete,buste:J.chest,bassin:J.hip,_J:J};
+            tete:J.tete,buste:J.chest,bassin:J.hip,rot,_J:J};
+  }
+  function versLocal(p,hip){ // annule la rotation pour les calculs IK
+    const a=-(poseCour.rot||0)*DEG,ca=Math.cos(a),sa2=Math.sin(a);
+    const dx=p.x-hip.x,dy=p.y-hip.y;
+    return {x:hip.x+dx*ca-dy*sa2,y:hip.y+dx*sa2+dy*ca};
   }
   function dessinerPE(){
     c2.clearRect(0,0,CW,CH);
@@ -1774,11 +1922,15 @@ function dlgEditeurPoses(ac){
     dessinerPersonnage(c2,cx2,solY2,H2,p,perso.style,{facing:1,expression:'neutre',t:tA});
     if(!apercu){
       const pg=poignees();
-      for(const k of ['mainL','mainR','piedL','piedR','tete','buste','bassin']){
+      for(const k of ['mainL','mainR','piedL','piedR','tete','buste','bassin','rot']){
         const pt=pg[k];
-        c2.beginPath();c2.arc(pt.x,pt.y,9,0,TAU);
-        c2.fillStyle='rgba(255,214,10,.9)';c2.fill();
+        c2.beginPath();c2.arc(pt.x,pt.y,k==='rot'?11:9,0,TAU);
+        c2.fillStyle=k==='rot'?'rgba(255,107,74,.9)':'rgba(255,214,10,.9)';c2.fill();
         c2.strokeStyle='#0D1026';c2.lineWidth=2;c2.stroke();
+        if(k==='rot'){
+          c2.fillStyle='#0D1026';c2.font='700 12px Manrope,sans-serif';
+          c2.textAlign='center';c2.fillText('↻',pt.x,pt.y+4);
+        }
       }
     }
   }
@@ -1825,33 +1977,39 @@ function dlgEditeurPoses(ac){
   cv2.addEventListener('pointerdown',ev=>{
     if(apercu)return;
     const p=posCanvas(ev),pg=poignees();
-    for(const k of ['mainL','mainR','piedL','piedR','tete','buste','bassin']){
+    for(const k of ['rot','mainL','mainR','piedL','piedR','tete','buste','bassin']){
       if(Math.hypot(p.x-pg[k].x,p.y-pg[k].y)<16){saisie=k;cv2.setPointerCapture(ev.pointerId);break;}
     }
   });
   cv2.addEventListener('pointermove',ev=>{
     if(!saisie)return;
-    const p=posCanvas(ev);
+    const pB=posCanvas(ev);
     const J=calculerJointsPE(cx2,solY2,H2,poseCour);
     const M=J.mesures;
+    if(saisie==='rot'){
+      poseCour.rot=clamp(angUp(pB.x-J.hip.x,pB.y-J.hip.y),-115,115);
+      dessinerPE();return;
+    }
+    const JL=calculerJointsPE(cx2,solY2,H2,{...poseCour,rot:0});
+    const p=versLocal(pB,J.hip);
     if(saisie==='mainL'||saisie==='mainR'){
-      const ik=ik2os(J.chest.x,J.chest.y,p.x,p.y,M.uaL,M.faL,saisie==='mainL'?1:-1);
-      const sa=angDown(ik.j.x-J.chest.x,ik.j.y-J.chest.y);
+      const ik=ik2os(JL.chest.x,JL.chest.y,p.x,p.y,M.uaL,M.faL,saisie==='mainL'?1:-1);
+      const sa=angDown(ik.j.x-JL.chest.x,ik.j.y-JL.chest.y);
       const a2=angDown(ik.e.x-ik.j.x,ik.e.y-ik.j.y);
       if(saisie==='mainL'){poseCour.saL=sa;poseCour.eaL=a2-sa;}
       else{poseCour.saR=sa;poseCour.eaR=a2-sa;}
     }else if(saisie==='piedL'||saisie==='piedR'){
-      const ik=ik2os(J.hip.x,J.hip.y,p.x,p.y,M.thL,M.shL,1);
-      const hh=angDown(ik.j.x-J.hip.x,ik.j.y-J.hip.y);
+      const ik=ik2os(JL.hip.x,JL.hip.y,p.x,p.y,M.thL,M.shL,1);
+      const hh=angDown(ik.j.x-JL.hip.x,ik.j.y-JL.hip.y);
       const sh=angDown(ik.e.x-ik.j.x,ik.e.y-ik.j.y);
       if(saisie==='piedL'){poseCour.hhL=hh;poseCour.kkL=hh-sh;}
       else{poseCour.hhR=hh;poseCour.kkR=hh-sh;}
     }else if(saisie==='buste'){
-      poseCour.sp=clamp(angUp(p.x-J.hip.x,p.y-J.hip.y),-60,60);
+      poseCour.sp=clamp(angUp(p.x-JL.hip.x,p.y-JL.hip.y),-60,60);
     }else if(saisie==='tete'){
-      poseCour.hd=clamp(angUp(p.x-J.chest.x,p.y-J.chest.y)-poseCour.sp*.6,-50,50);
+      poseCour.hd=clamp(angUp(p.x-JL.chest.x,p.y-JL.chest.y)-poseCour.sp*.6,-50,50);
     }else if(saisie==='bassin'){
-      poseCour.dy=clamp((solY2-M.hipH-p.y)/H2,-.3,.35);
+      poseCour.dy=clamp((solY2-M.hipH-pB.y)/H2,-.3,.35);
     }
     dessinerPE();
   });

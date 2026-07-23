@@ -36,7 +36,7 @@
   .colonne{overflow-y:auto;padding:12px;border-right:1px solid var(--ligne)}
   .colonne:last-child{border-right:none;border-left:1px solid var(--ligne)}
   .centre{display:flex;flex-direction:column;min-width:0;padding:12px;gap:10px;overflow-y:auto}
-  canvas{display:block;width:100%;height:auto;background:#EDEAE0;border-radius:10px}
+  canvas{display:block;width:auto;height:auto;max-width:100%;max-height:62vh;margin:0 auto;background:#EDEAE0;border-radius:10px}
   .etiq{font-size:10.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
     color:var(--texte2);margin:14px 0 8px}
   .etiq:first-child{margin-top:0}
@@ -90,6 +90,15 @@
   .tl-bloc.son{background:#7BC96F;color:#0B2012;cursor:default}
   .tl-tete{position:absolute;top:6px;bottom:6px;width:2px;background:var(--corail);
     pointer-events:none;z-index:2;border-radius:2px}
+  .voile{position:fixed;inset:0;background:rgba(13,16,38,.72);display:flex;
+    align-items:center;justify-content:center;z-index:50}
+  .dialogue{background:var(--panneau);border:1px solid var(--ligne);border-radius:14px;
+    padding:20px;width:min(92vw,380px);max-height:80vh;overflow-y:auto}
+  .dialogue h3{font-size:15px;margin-bottom:14px}
+  .dialogue input{width:100%;margin-bottom:10px;background:var(--encre);
+    border:1px solid var(--ligne);color:var(--texte);border-radius:8px;
+    padding:9px 11px;font-family:inherit;font-size:13px}
+  .dialogue .rang{justify-content:flex-end}
   @media (max-width:900px){
     body{overflow:auto}
     .atelier{grid-template-columns:1fr;grid-auto-rows:auto}
@@ -105,11 +114,20 @@
   <a class="lien" href="toon.html">Stick vs Toon</a>
   <a class="lien" href="fluide.html">Animation fluide</a>
   <input type="text" id="titreProjet" value="Ma première vidéo">
+  <select id="formatVideo" title="Format de la vidéo">
+    <option value="9:16" selected>📱 9:16 — TikTok / Reels / Shorts</option>
+    <option value="1:1">◼ 1:1 — carré</option>
+    <option value="16:9">🖥 16:9 — YouTube</option>
+  </select>
   <button id="btnNouveau">Nouveau</button>
   <button id="btnImporter">Importer</button>
   <button id="btnExporterJSON">Exporter JSON</button>
   <input type="file" id="fichierImport" accept=".json" style="display:none">
   <input type="file" id="fichierAudio" accept="audio/*" style="display:none">
+  <input type="file" id="fichierImage" accept="image/*" style="display:none">
+  <button id="btnCloudConnexion">☁ Connexion</button>
+  <button id="btnCloudSauver">☁ Sauvegarder</button>
+  <button id="btnCloudProjets">☁ Mes projets</button>
   <span class="pousse"></span>
   <button id="btnFilm">▶ Lire le film</button>
   <button id="btnExporterVideo" class="principal">⬇ Exporter la vidéo</button>
@@ -483,17 +501,37 @@ function decorCarton(ctx,W,Hc){
   ctx.strokeRect(36,36,W-72,Hc-72);
 }
 const DECORS={studio:decorStudio,rueNuit:decorRueNuit,bar:decorBar,boite:decorBoite,carton:decorCarton};
-const NOMS_DECORS={studio:"Studio",rueNuit:"Rue de nuit",bar:"Bar",boite:"Boîte de nuit",carton:"Carton titre"};
+const NOMS_DECORS={studio:"Studio",rueNuit:"Rue de nuit",bar:"Bar",boite:"Boîte de nuit",carton:"Carton titre",image:"📷 Image importée"};
+function assurerImage(sc){
+  if(sc.imageData&&!sc._img){
+    const im=new Image();im.src=sc.imageData;sc._img=im;
+  }
+}
+function dessinerDecor(sc,solY){
+  if(sc.decor==='image'){
+    assurerImage(sc);
+    if(sc._img&&sc._img.complete&&sc._img.naturalWidth){
+      const im=sc._img,r=Math.max(W/im.naturalWidth,Hc/im.naturalHeight);
+      const dw=im.naturalWidth*r,dh=im.naturalHeight*r;
+      ctx.drawImage(im,(W-dw)/2,(Hc-dh)/2,dw,dh);
+      ctx.fillStyle='rgba(13,16,38,0.10)';ctx.fillRect(0,0,W,Hc);
+      return;
+    }
+    decorStudio(ctx,W,Hc,solY);return;
+  }
+  (DECORS[sc.decor]||decorStudio)(ctx,W,Hc,solY);
+}
 function dessinerBulle(ctx,tx,ty,texte){
-  ctx.font='600 24px Manrope,system-ui,sans-serif';
-  const pad=16,w=ctx.measureText(texte).width+pad*2,h=46;
-  const bx=clamp(tx-w/2,12,1280-w-12),by=ty-h-26;
+  const e=sTexte();
+  ctx.font='600 '+Math.round(24*e)+'px Manrope,system-ui,sans-serif';
+  const pad=16*e,w=ctx.measureText(texte).width+pad*2,h=46*e;
+  const bx=clamp(tx-w/2,12,W-w-12),by=ty-h-26*e;
   ctx.fillStyle='#FFFFFF';ctx.strokeStyle='#0D1026';ctx.lineWidth=2.5;
-  ctx.beginPath();ctx.roundRect(bx,by,w,h,14);ctx.fill();ctx.stroke();
-  ctx.beginPath();ctx.moveTo(tx-9,by+h-1);ctx.lineTo(tx+11,by+h-1);ctx.lineTo(tx+2,by+h+16);
+  ctx.beginPath();ctx.roundRect(bx,by,w,h,14*e);ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(tx-9*e,by+h-1);ctx.lineTo(tx+11*e,by+h-1);ctx.lineTo(tx+2*e,by+h+16*e);
   ctx.closePath();ctx.fill();ctx.stroke();
   ctx.fillStyle='#0D1026';ctx.textAlign='left';
-  ctx.fillText(texte,bx+pad,by+h/2+8);
+  ctx.fillText(texte,bx+pad,by+h/2+8*e);
 }
 
 /* ---------------- PROJET (état de l'éditeur) ---------------- */
@@ -512,7 +550,8 @@ function nouveauProjet(){
   };
 }
 function nouvelleScene(p){
-  return {id:nid('s'),decor:"studio",meteo:false,foule:0,transition:"fondu",
+  return {id:nid('s'),decor:"studio",meteo:false,foule:0,transition:"cut",cadrage:"large",
+    dureeMin:2,visagePerso:null,visageExpr:"troll",
     acteurs:[],textes:[],sons:[]};
 }
 function nouvelActeur(persoId){
@@ -534,7 +573,7 @@ let projet=nouveauProjet();
 
 /* durée d'une scène = fin de la dernière action / du dernier texte */
 function dureeScene(sc){
-  let d=1.5;
+  let d=Math.max(1.5,+sc.dureeMin||0);
   for(const ac of sc.acteurs){
     let s=0;for(const st of ac.chrono)s+=Math.max(.2,+st.duree||0);
     d=Math.max(d,s);
@@ -600,6 +639,163 @@ function membresFoule(sc){
       taille:.85+hash(i*13)*.25,dephase:hash(i*17),rang:hash(i*19)>.5?1:0});
   }
   sc._membres=m;sc._n=sc.foule;return m;
+}
+
+/* ---------------- GROS PLAN VISAGE (réactions memes, style Rico) ---------------- */
+const REACTIONS={troll:"😏 Troll grin",rire_larmes:"😂 Rire aux larmes",rage:"🤬 Rage",
+  choc:"😱 Choc",smug:"😌 Fier de lui",peur:"😨 Terreur",triste:"😢 Triste",
+  parle:"🗣 Parle (bouche suit le son)"};
+function dessinerGrosPlan(sc,tl,bouche){
+  // vignette
+  const v=ctx.createRadialGradient(W/2,Hc/2,Math.min(W,Hc)*.28,W/2,Hc/2,Math.max(W,Hc)*.75);
+  v.addColorStop(0,'rgba(13,16,38,0)');v.addColorStop(1,'rgba(13,16,38,0.55)');
+  ctx.fillStyle=v;ctx.fillRect(0,0,W,Hc);
+  const perso=persoParId(sc.visagePerso)||projet.personnages[0];
+  if(!perso)return;
+  const ink=perso.style.couleur,pap='#F2F0E9';
+  const expr=sc.visageExpr||'troll';
+  const R=Math.min(W,Hc)*.36;
+  let cx=W/2,cy=Hc/2+R*.06+Math.sin(tl*2.2)*R*.015;
+  if(expr==='rage'||expr==='peur'){cx+=Math.sin(tl*57)*R*.02;cy+=Math.cos(tl*49)*R*.016;}
+  if(expr==='rire_larmes')cy+=Math.abs(Math.sin(tl*9))*R*.05;
+  const lw=R*.06;
+  // tête
+  ctx.fillStyle=ink;
+  ctx.beginPath();ctx.arc(cx,cy,R,0,TAU);ctx.fill();
+  if(expr==='rage'){
+    ctx.fillStyle='rgba(255,60,40,0.40)';
+    ctx.beginPath();ctx.arc(cx,cy,R,0,TAU);ctx.fill();
+  }
+  // cheveux selon variante
+  ctx.fillStyle=ink;
+  if(perso.style.genre==='femme'){
+    for(const sgn of [-1,1]){
+      ctx.beginPath();
+      ctx.moveTo(cx+sgn*R*.85,cy-R*.3);
+      ctx.quadraticCurveTo(cx+sgn*R*1.25,cy+R*.7,cx+sgn*R*.7,cy+R*1.45);
+      ctx.quadraticCurveTo(cx+sgn*R*.45,cy+R*.7,cx+sgn*R*.6,cy-R*.05);
+      ctx.closePath();ctx.fill();
+    }
+  }
+  ctx.strokeStyle=pap;ctx.fillStyle=pap;ctx.lineWidth=lw;
+  ctx.lineCap='round';ctx.lineJoin='round';
+  const oy=cy-R*.22;
+  // ---- yeux ----
+  function oeilRond(x,rx,ry,pupille){
+    ctx.fillStyle=pap;
+    ctx.beginPath();ctx.ellipse(x,oy,rx,ry,0,0,TAU);ctx.fill();
+    ctx.fillStyle=ink;
+    ctx.beginPath();ctx.arc(x,oy+ry*.15,pupille,0,TAU);ctx.fill();
+  }
+  if(expr==='rire_larmes'){
+    ctx.lineWidth=lw*1.1;
+    for(const sgn of [-1,1]){
+      ctx.beginPath();ctx.arc(cx+sgn*R*.34,oy+R*.10,R*.16,1.15*Math.PI,1.85*Math.PI);ctx.stroke();
+    }
+  }else if(expr==='smug'){
+    for(const sgn of [-1,1]){
+      ctx.fillStyle=pap;
+      ctx.beginPath();ctx.ellipse(cx+sgn*R*.34,oy,R*.17,R*.10,0,0,Math.PI);ctx.fill();
+      ctx.fillStyle=ink;
+      ctx.beginPath();ctx.arc(cx+sgn*R*.34,oy+R*.02,R*.055,0,TAU);ctx.fill();
+    }
+  }else if(expr==='choc'||expr==='peur'){
+    oeilRond(cx-R*.34,R*.20,R*.24,R*.045);
+    oeilRond(cx+R*.34,R*.20,R*.24,R*.045);
+  }else if(expr==='rage'){
+    oeilRond(cx-R*.34,R*.17,R*.13,R*.07);
+    oeilRond(cx+R*.34,R*.17,R*.13,R*.07);
+  }else{
+    oeilRond(cx-R*.34,R*.15,R*.17,R*.07);
+    oeilRond(cx+R*.34,R*.15,R*.17,R*.07);
+  }
+  // ---- sourcils ----
+  ctx.strokeStyle=pap;ctx.lineWidth=lw*1.15;
+  if(expr==='rage'){
+    ctx.beginPath();ctx.moveTo(cx-R*.55,oy-R*.34);ctx.lineTo(cx-R*.14,oy-R*.16);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+R*.55,oy-R*.34);ctx.lineTo(cx+R*.14,oy-R*.16);ctx.stroke();
+  }else if(expr==='triste'||expr==='peur'){
+    ctx.beginPath();ctx.moveTo(cx-R*.52,oy-R*.22);ctx.lineTo(cx-R*.16,oy-R*.34);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+R*.52,oy-R*.22);ctx.lineTo(cx+R*.16,oy-R*.34);ctx.stroke();
+  }else if(expr==='troll'||expr==='smug'){
+    ctx.beginPath();ctx.moveTo(cx-R*.52,oy-R*.30);ctx.lineTo(cx-R*.14,oy-R*.36);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+R*.52,oy-R*.36);ctx.lineTo(cx+R*.14,oy-R*.30);ctx.stroke();
+  }else if(expr==='choc'){
+    ctx.beginPath();ctx.moveTo(cx-R*.52,oy-R*.40);ctx.lineTo(cx-R*.16,oy-R*.42);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+R*.52,oy-R*.40);ctx.lineTo(cx+R*.16,oy-R*.42);ctx.stroke();
+  }
+  // ---- bouche ----
+  const my=cy+R*.34;
+  ctx.strokeStyle=pap;ctx.fillStyle=pap;ctx.lineWidth=lw;
+  if(bouche!=null&&(expr==='parle'||bouche>0)){
+    const mh=[R*.03,R*.10,R*.20,R*.32][bouche];
+    ctx.beginPath();ctx.ellipse(cx,my,R*.24,mh,0,0,TAU);ctx.fill();
+  }else if(expr==='troll'){
+    ctx.lineWidth=lw*.9;
+    ctx.beginPath();
+    ctx.moveTo(cx-R*.55,my-R*.10);
+    ctx.quadraticCurveTo(cx,my+R*.30,cx+R*.55,my-R*.14);
+    ctx.stroke();
+    for(const fx2 of [-.32,-.08,.16,.4]){
+      ctx.beginPath();
+      ctx.moveTo(cx+R*fx2,my+R*(.11-Math.abs(fx2)*.28));
+      ctx.lineTo(cx+R*fx2,my-R*(.02+Math.abs(fx2)*.22));
+      ctx.stroke();
+    }
+  }else if(expr==='rire_larmes'){
+    ctx.beginPath();ctx.ellipse(cx,my,R*.30,R*.22+Math.abs(Math.sin(tl*9))*R*.06,0,0,TAU);ctx.fill();
+  }else if(expr==='rage'){
+    ctx.fillRect(cx-R*.34,my-R*.10,R*.68,R*.20);
+    ctx.strokeStyle=ink;ctx.lineWidth=lw*.5;
+    for(let k=-2;k<=2;k++){
+      ctx.beginPath();ctx.moveTo(cx+k*R*.15,my-R*.10);ctx.lineTo(cx+k*R*.15,my+R*.10);ctx.stroke();
+    }
+    ctx.beginPath();ctx.moveTo(cx-R*.34,my);ctx.lineTo(cx+R*.34,my);ctx.stroke();
+  }else if(expr==='choc'){
+    ctx.beginPath();ctx.ellipse(cx,my,R*.16,R*.24,0,0,TAU);ctx.fill();
+  }else if(expr==='smug'){
+    ctx.lineWidth=lw*.9;
+    ctx.beginPath();ctx.moveTo(cx-R*.22,my+R*.02);
+    ctx.quadraticCurveTo(cx+R*.10,my+R*.10,cx+R*.30,my-R*.10);ctx.stroke();
+  }else if(expr==='peur'){
+    ctx.lineWidth=lw*.8;
+    ctx.beginPath();ctx.moveTo(cx-R*.26,my);
+    for(let k=0;k<6;k++)ctx.lineTo(cx-R*.26+k*R*.104,my+(k%2?R*.06:-R*.06));
+    ctx.stroke();
+  }else if(expr==='triste'){
+    ctx.lineWidth=lw*.9;
+    ctx.beginPath();ctx.arc(cx,my+R*.22,R*.26,1.15*Math.PI,1.85*Math.PI);ctx.stroke();
+  }else{
+    ctx.beginPath();ctx.moveTo(cx-R*.2,my);ctx.lineTo(cx+R*.2,my);ctx.stroke();
+  }
+  // ---- effets ----
+  if(expr==='rire_larmes'){
+    ctx.fillStyle='#4FA8FF';
+    for(let k=0;k<4;k++){
+      const age=(tl*1.8+k*.25)%1,sgn=k%2?1:-1;
+      ctx.globalAlpha=1-age;
+      ctx.beginPath();
+      ctx.ellipse(cx+sgn*(R*.55+age*R*.8),oy+R*.1+age*R*.9,R*.05,R*.08,sgn*.6,0,TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+  if(expr==='choc'||expr==='peur'){
+    ctx.fillStyle='#4FA8FF';
+    const age=(tl*1.2)%1;
+    ctx.globalAlpha=1-age;
+    ctx.beginPath();ctx.ellipse(cx+R*.75,cy-R*.55+age*R*.5,R*.06,R*.09,.4,0,TAU);ctx.fill();
+    ctx.globalAlpha=1;
+  }
+  if(expr==='rage'){
+    ctx.strokeStyle='rgba(255,255,255,.7)';ctx.lineWidth=lw*.5;
+    for(const sgn of [-1,1]){
+      const p=(tl*3)%1;
+      ctx.globalAlpha=1-p;
+      ctx.beginPath();ctx.arc(cx+sgn*R*1.05,cy-R*.75-p*R*.3,R*.09*(1+p),0,TAU);ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+  }
 }
 
 /* ---------------- AUDIO : effets synthétisés + imports ---------------- */
@@ -713,7 +909,17 @@ async function rechargerBuffers(){
 
 /* ---------------- LECTURE / DESSIN ---------------- */
 const cv=document.getElementById('scene'),ctx=cv.getContext('2d');
-const W=cv.width,Hc=cv.height;
+let W=cv.width,Hc=cv.height;
+const FORMATS={'9:16':[1080,1920],'1:1':[1080,1080],'16:9':[1280,720]};
+function appliquerFormat(f){
+  if(!FORMATS[f])f='9:16';
+  cv.width=FORMATS[f][0];cv.height=FORMATS[f][1];
+  W=cv.width;Hc=cv.height;
+  projet.meta.format=f;
+  const sel=document.getElementById('formatVideo');
+  if(sel&&sel.value!==f)sel.value=f;
+}
+function sTexte(){return Math.sqrt((W*Hc)/(1280*720));}
 let modeLect='scene';   // 'scene' | 'film'
 let t=0,enLecture=true,tPrec=performance.now();
 let selScene=0,selActeur=-1,ongletActif='scene';
@@ -752,7 +958,20 @@ function dessinerScene(sc,tl,solY){
       }
     }
   }
-  DECORS[sc.decor](ctx,W,Hc,solY);
+  dessinerDecor(sc,solY);
+  if(sc.cadrage==='gros_plan'){
+    // bouche : suit n'importe quel audio actif de la scène
+    let boucheGP=null;
+    for(const ev of (sc.sons||[])){
+      if(ev.type!=='audio')continue;
+      const au=(projet.audios||[]).find(a=>a.id===ev.audioId);
+      if(au&&au.bouche){
+        const tv=tl-(+ev.t||0);
+        if(tv>=0&&tv<au.duree)boucheGP=au.bouche[Math.floor(tv/.05)]||0;
+      }
+    }
+    dessinerGrosPlan(sc,tl,boucheGP);
+  }
   const tetes={};
   let shake=false;
   for(const ac of sc.acteurs){
@@ -761,7 +980,7 @@ function dessinerScene(sc,tl,solY){
   }
   ctx.save();
   if(shake)ctx.translate(Math.sin(tl*47)*3,Math.cos(tl*41)*2.4);
-  if(sc.foule>0){
+  if(sc.cadrage!=='gros_plan'&&sc.foule>0){
     for(const m of membresFoule(sc)){
       const H2=Hc*.40*.62*m.taille;
       const ph=((tl/ACTIONS.danser.periode)+m.dephase)%1;
@@ -773,7 +992,7 @@ function dessinerScene(sc,tl,solY){
         {facing:m.x<.5?1:-1,expression:'content',t:tl});
     }
   }
-  for(const ac of sc.acteurs){
+  for(const ac of (sc.cadrage==='gros_plan'?[]:sc.acteurs)){
     const st=etatActeur(ac,tl);if(!st)continue;
     const perso=persoParId(ac.personnageId);if(!perso)continue;
     const H2=Hc*.40*(perso.style.taille||1);
@@ -798,19 +1017,19 @@ function dessinerScene(sc,tl,solY){
       const h=tetes[tx.acteur];
       let by=h.tete.y-h.R;
       for(const bp of bullesPosees){
-        if(Math.abs(h.tete.x-bp.x)<340&&Math.abs(by-bp.y)<74)by=bp.y-78;
+        if(Math.abs(h.tete.x-bp.x)<340*sTexte()&&Math.abs(by-bp.y)<74*sTexte())by=bp.y-78*sTexte();
       }
       bullesPosees.push({x:h.tete.x,y:by});
       dessinerBulle(ctx,h.tete.x,by,tx.contenu||'…');
     }else if(tx.type==='titre'){
       ctx.fillStyle='#FFD60A';ctx.textAlign='center';
-      ctx.font='800 72px Manrope,sans-serif';
+      ctx.font='800 '+Math.round(72*sTexte())+'px Manrope,sans-serif';
       ctx.fillText(tx.contenu||'',W/2,Hc/2-6+(1-a)*14);
     }else if(tx.type==='soustitre'){
       const sombre=(sc.decor==='carton'||sc.decor==='boite'||sc.decor==='rueNuit');
       ctx.fillStyle=sombre?'#E8E9F2':'#3A3A46';ctx.textAlign='center';
-      ctx.font='600 24px Manrope,sans-serif';
-      ctx.fillText(tx.contenu||'',W/2,Hc-34);
+      ctx.font='600 '+Math.round(24*sTexte())+'px Manrope,sans-serif';
+      ctx.fillText(tx.contenu||'',W/2,Hc-34*sTexte());
     }
     ctx.restore();
   }
@@ -911,6 +1130,7 @@ function importerJSON(fichier){
     projet.audios=projet.audios||[];
     for(const sc2 of projet.scenes)sc2.sons=sc2.sons||[];
     document.getElementById('titreProjet').value=projet.meta.titre||'Projet';
+    appliquerFormat(projet.meta.format||'9:16');
     rechargerBuffers();
     toutRedessiner();
   }catch(e){alert("Fichier de projet invalide.");}};
@@ -923,17 +1143,27 @@ function exporterVideo(){
   audioCtxGet();
   const flux=cv.captureStream(30);
   for(const tr of ACdest.stream.getAudioTracks())flux.addTrack(tr);
-  let type='video/webm;codecs=vp9';
-  if(!MediaRecorder.isTypeSupported(type))type='video/webm';
+  const candidats=[
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm'
+  ];
+  const type=candidats.find(c=>MediaRecorder.isTypeSupported(c))||'video/webm';
+  const estMp4=type.startsWith('video/mp4');
   exportChunks=[];
-  exportRec=new MediaRecorder(flux,{mimeType:type,videoBitsPerSecond:6_000_000});
+  exportRec=new MediaRecorder(flux,{mimeType:type,videoBitsPerSecond:8_000_000});
   exportRec.ondataavailable=e=>{if(e.data.size)exportChunks.push(e.data);};
   exportRec.onstop=()=>{
-    const blob=new Blob(exportChunks,{type:'video/webm'});
+    const blob=new Blob(exportChunks,{type:estMp4?'video/mp4':'video/webm'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
-    a.download=(document.getElementById('titreProjet').value||'funanim').replace(/\s+/g,'_')+'.webm';
+    a.download=(document.getElementById('titreProjet').value||'funanim').replace(/\s+/g,'_')
+      +(estMp4?'.mp4':'.webm');
     a.click();
+    if(!estMp4)alert("Ton navigateur ne sait pas encoder en MP4 : la vidéo est en .webm.\n"
+      +"Utilise Chrome/Edge/Opera récent pour un MP4 direct — ou attends le rendu serveur (MP4 garanti), prochaine étape du projet.");
   };
   exportRec.start();
   document.getElementById('btnExporterVideo').textContent='⏺ Enregistrement…';
@@ -970,7 +1200,7 @@ function rendreScenes(){
   projet.scenes.forEach((sc,i)=>{
     const c=el('div',{class:'carte'+(i===selScene?' sel':''),onclick:()=>{selScene=i;selActeur=-1;t=0;modeLect='scene';toutRedessiner();}},
       el('span',{class:'num'},String(i+1)),
-      el('span',{},NOMS_DECORS[sc.decor]),
+      el('span',{},sc.cadrage==='gros_plan'?'🎥 Gros plan':(NOMS_DECORS[sc.decor]||'—')),
       el('span',{class:'num'},dureeScene(sc).toFixed(1)+'s'),
       el('button',{class:'mini danger sup',onclick:ev=>{ev.stopPropagation();
         projet.scenes.splice(i,1);selScene=clamp(selScene,0,projet.scenes.length-1);toutRedessiner();}},'✕'));
@@ -1056,9 +1286,30 @@ function rendreInspecteur(){
   if(!sc){insp.append(el('div',{class:'aide'},'Ajoute une scène pour commencer.'));return;}
 
   if(ongletActif==='scene'){
+    insp.append(el('div',{class:'etiq'},'Cadrage (le rythme Rico !)'));
+    insp.append(el('div',{class:'rang'},el('label',{},'Type de plan'),
+      selecteur({large:'Plan large (scène)',gros_plan:'🎥 Gros plan visage (réaction)'},
+        sc.cadrage||'large',v=>{sc.cadrage=v;rendreScenes();rendreInspecteur();})));
+    if(sc.cadrage==='gros_plan'){
+      const optsP={};projet.personnages.forEach(p=>optsP[p.id]=p.nom);
+      insp.append(el('div',{class:'rang'},el('label',{},'Personnage'),
+        selecteur(optsP,sc.visagePerso||projet.personnages[0]?.id,v=>{sc.visagePerso=v;})));
+      insp.append(el('div',{class:'rang'},el('label',{},'Réaction'),
+        selecteur(REACTIONS,sc.visageExpr||'troll',v=>{sc.visageExpr=v;})));
+      insp.append(el('div',{class:'aide'},
+        'Ajoute un son dans l\'onglet Sons : avec « Parle », la bouche suit automatiquement l\'audio. Enchaîne des gros plans courts (1-2 s, transition Cut) : c\'est ça, le montage Rico.'));
+    }
+    insp.append(el('div',{class:'rang'},el('label',{},'Durée min (s)'),
+      el('input',{type:'number',min:.5,step:.5,value:sc.dureeMin==null?2:sc.dureeMin,
+        oninput:e=>{sc.dureeMin=+e.target.value;rendreScenes();rendreTimeline();}})));
     insp.append(el('div',{class:'etiq'},'Réglages de la scène'));
     const r1=el('div',{class:'rang'},el('label',{},'Décor'),
-      selecteur(NOMS_DECORS,sc.decor,v=>{sc.decor=v;}));
+      selecteur(NOMS_DECORS,sc.decor,v=>{
+        sc.decor=v;rendreScenes();
+        if(v==='image'&&!sc.imageData)$('fichierImage').click();
+      }));
+    if(sc.decor==='image')r1.append(el('button',{class:'mini',
+      onclick:()=>$('fichierImage').click()},sc.imageData?'Changer l\'image':'⬆ Importer une image'));
     const r2=el('div',{class:'rang'},el('label',{},'Pluie'),
       el('input',{type:'checkbox',...(sc.meteo?{checked:''}:{}),onchange:e=>{sc.meteo=e.target.checked;}}));
     const r3=el('div',{class:'rang'},el('label',{},'Foule'),
@@ -1264,6 +1515,15 @@ $('btnExporterJSON').addEventListener('click',exporterJSON);
 $('btnImporter').addEventListener('click',()=>$('fichierImport').click());
 $('fichierImport').addEventListener('change',e=>{if(e.target.files[0])importerJSON(e.target.files[0]);e.target.value='';});
 $('fichierAudio').addEventListener('change',e=>{if(e.target.files[0])importerAudio(e.target.files[0]);e.target.value='';});
+$('fichierImage').addEventListener('change',e=>{
+  const f=e.target.files[0];e.target.value='';
+  if(!f)return;
+  if(f.size>3_000_000){alert('Image trop lourde (max ~3 Mo).');return;}
+  const sc=projet.scenes[selScene];if(!sc)return;
+  const fr=new FileReader();
+  fr.onload=()=>{sc.imageData=fr.result;sc._img=null;sc.decor='image';rendreScenes();rendreInspecteur();};
+  fr.readAsDataURL(f);
+});
 $('btnExporterVideo').addEventListener('click',()=>{if(exportRec)terminerExport();else exporterVideo();});
 document.querySelectorAll('.onglets button').forEach(b=>{
   b.addEventListener('click',()=>{
@@ -1271,6 +1531,108 @@ document.querySelectorAll('.onglets button').forEach(b=>{
     document.querySelectorAll('.onglets button').forEach(x=>x.classList.toggle('actif',x===b));
     rendreInspecteur();});
 });
+
+document.getElementById('formatVideo').addEventListener('change',e=>appliquerFormat(e.target.value));
+appliquerFormat(projet.meta.format||'9:16');
+/* ---------------- CLOUD (API FUNANIM sur Render + Neon) ---------------- */
+const API_URL='https://funanim-api.onrender.com'; // ← à ajuster après création du service Render
+let cloudToken=null,cloudEmail=null,projetCloudId=null;
+try{cloudToken=localStorage.getItem('funanim_token');cloudEmail=localStorage.getItem('funanim_email');}catch(e){}
+function majBoutonsCloud(){
+  $('btnCloudConnexion').textContent=cloudToken?('👤 '+(cloudEmail||'Connecté')):'☁ Connexion';
+}
+function fermerDialogue(){document.querySelectorAll('.voile').forEach(v=>v.remove());}
+function ouvrirDialogue(titre,contenu){
+  fermerDialogue();
+  const d=el('div',{class:'dialogue'},el('h3',{},titre),contenu);
+  const v=el('div',{class:'voile',onclick:e=>{if(e.target===v)fermerDialogue();}},d);
+  document.body.append(v);
+}
+async function apiFetch(chemin,options={}){
+  const h={'Content-Type':'application/json',...(options.headers||{})};
+  if(cloudToken)h['Authorization']='Bearer '+cloudToken;
+  const r=await fetch(API_URL+chemin,{...options,headers:h});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.erreur||('Erreur '+r.status));
+  return j;
+}
+function dlgConnexion(){
+  const em=el('input',{type:'email',placeholder:'Email',value:cloudEmail||''});
+  const mp=el('input',{type:'password',placeholder:'Mot de passe (6 caractères min)'});
+  const msg=el('div',{class:'aide',style:'margin-bottom:8px'},'');
+  async function envoyer(route){
+    msg.textContent='…';
+    try{
+      const j=await apiFetch('/auth/'+route,{method:'POST',
+        body:JSON.stringify({email:em.value.trim(),mdp:mp.value})});
+      cloudToken=j.token;cloudEmail=j.utilisateur.email;
+      try{localStorage.setItem('funanim_token',cloudToken);
+          localStorage.setItem('funanim_email',cloudEmail);}catch(e){}
+      majBoutonsCloud();fermerDialogue();
+    }catch(e){msg.textContent='⚠ '+e.message;}
+  }
+  const contenu=el('div',{},em,mp,msg,
+    el('div',{class:'rang'},
+      el('button',{onclick:()=>envoyer('inscription')},'Créer un compte'),
+      el('button',{class:'principal',onclick:()=>envoyer('connexion')},'Se connecter')));
+  if(cloudToken)contenu.append(el('div',{class:'rang'},
+    el('button',{class:'danger',style:'width:100%',onclick:()=>{
+      cloudToken=null;cloudEmail=null;projetCloudId=null;
+      try{localStorage.removeItem('funanim_token');localStorage.removeItem('funanim_email');}catch(e){}
+      majBoutonsCloud();fermerDialogue();}},'Se déconnecter')));
+  ouvrirDialogue('Compte FUNANIM',contenu);
+}
+async function sauverCloud(){
+  if(!cloudToken){dlgConnexion();return;}
+  projet.meta.titre=$('titreProjet').value;
+  const propre=JSON.parse(JSON.stringify(projet,(k,v)=>k.startsWith('_')?undefined:v));
+  const corps=JSON.stringify({titre:projet.meta.titre,data:propre});
+  try{
+    const j=projetCloudId
+      ?await apiFetch('/projets/'+projetCloudId,{method:'PUT',body:corps})
+      :await apiFetch('/projets',{method:'POST',body:corps});
+    projetCloudId=j.projet.id;
+    $('btnCloudSauver').textContent='✓ Sauvegardé';
+    setTimeout(()=>$('btnCloudSauver').textContent='☁ Sauvegarder',1800);
+  }catch(e){alert('Sauvegarde impossible : '+e.message);}
+}
+async function dlgProjets(){
+  if(!cloudToken){dlgConnexion();return;}
+  const liste=el('div',{},el('div',{class:'aide'},'Chargement…'));
+  ouvrirDialogue('Mes projets',liste);
+  try{
+    const j=await apiFetch('/projets');
+    liste.innerHTML='';
+    if(!j.projets.length)liste.append(el('div',{class:'aide'},'Aucun projet sauvegardé pour le moment.'));
+    for(const p of j.projets){
+      liste.append(el('div',{class:'carte'},
+        el('span',{},p.titre),
+        el('span',{class:'num'},new Date(p.maj_le).toLocaleDateString()),
+        el('button',{class:'mini sup',onclick:async()=>{
+          try{
+            const d=await apiFetch('/projets/'+p.id);
+            projet=d.projet.data;projetCloudId=d.projet.id;
+            selScene=0;selActeur=-1;t=0;modeLect='scene';
+            projet.audios=projet.audios||[];
+            for(const sc2 of projet.scenes)sc2.sons=sc2.sons||[];
+            $('titreProjet').value=projet.meta.titre||d.projet.titre;
+            appliquerFormat(projet.meta.format||'9:16');
+            rechargerBuffers();toutRedessiner();fermerDialogue();
+          }catch(e){alert(e.message);}
+        }},'Ouvrir'),
+        el('button',{class:'mini danger',onclick:async ev2=>{
+          if(!confirm('Supprimer « '+p.titre+' » ?'))return;
+          try{await apiFetch('/projets/'+p.id,{method:'DELETE'});
+            if(projetCloudId===p.id)projetCloudId=null;
+            dlgProjets();}catch(e){alert(e.message);}
+        }},'✕')));
+    }
+  }catch(e){liste.innerHTML='';liste.append(el('div',{class:'aide'},'⚠ '+e.message));}
+}
+$('btnCloudConnexion').addEventListener('click',dlgConnexion);
+$('btnCloudSauver').addEventListener('click',sauverCloud);
+$('btnCloudProjets').addEventListener('click',dlgProjets);
+majBoutonsCloud();
 
 toutRedessiner();
 requestAnimationFrame(boucle);

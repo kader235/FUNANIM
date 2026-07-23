@@ -243,6 +243,14 @@ const ACTIONS={
   trembler:{boucle:true,periode:1.2,fx:'sueur',jitter:1,exprForce:'peur',cles:[
     {p:0,pose:{sp:-4,hd:-3,saL:34,eaL:110,saR:30,eaR:110,kkL:18,kkR:18,hhL:6,hhR:-6,dy:-.01}},
     {p:1,pose:{sp:-4,hd:-3,saL:34,eaL:110,saR:30,eaR:110,kkL:18,kkR:18,hhL:6,hhR:-6,dy:-.01}}]},
+  allonge:{boucle:true,periode:3.2,cles:[
+    {p:0,pose:{rot:-88,sp:2,hd:2,hhL:5,hhR:-2,kkL:5,kkR:6,saL:12,saR:-8,eaL:10,eaR:10}},
+    {p:.5,pose:{rot:-88,sp:4.5,hd:3,hhL:5,hhR:-2,kkL:5,kkR:6,saL:14,saR:-9,eaL:12,eaR:12}},
+    {p:1,pose:{rot:-88,sp:2,hd:2,hhL:5,hhR:-2,kkL:5,kkR:6,saL:12,saR:-8,eaL:10,eaR:10}}]},
+  dormir:{boucle:true,periode:3.6,fx:'zzz',exprForce:'dodo',cles:[
+    {p:0,pose:{rot:-88,sp:2,hd:4,hhL:14,hhR:4,kkL:22,kkR:14,saL:26,saR:-6,eaL:36,eaR:12}},
+    {p:.5,pose:{rot:-88,sp:5,hd:5,hhL:14,hhR:4,kkL:22,kkR:14,saL:28,saR:-7,eaL:38,eaR:12}},
+    {p:1,pose:{rot:-88,sp:2,hd:4,hhL:14,hhR:4,kkL:22,kkR:14,saL:26,saR:-6,eaL:36,eaR:12}}]},
   crier:{boucle:true,periode:.8,fx:'cri',boucheCycle:[3,3],secousse:1,exprForce:'fache',cles:[
     {p:0,pose:{sp:14,hd:6,saL:-24,eaL:8,saR:-28,eaR:8,kkL:10,kkR:10,dy:.004}},
     {p:.5,pose:{sp:16,hd:8,saL:-28,eaL:8,saR:-32,eaR:8,kkL:14,kkR:14,dy:.012}},
@@ -251,9 +259,10 @@ const ACTIONS={
 const NOMS_ACTIONS={immobile:"Immobile",marcher:"Marcher",courir:"Courir",sauter:"Sauter",
   saluer:"Saluer",pointer:"Pointer",celebrer:"Célébrer",reflechir:"Réfléchir",tomber:"Tomber",
   danser:"Danser",applaudir:"Applaudir",assis:"S'asseoir",conduire:"Conduire",
+  allonge:"🛏 S'allonger",dormir:"😴 Dormir",
   rire:"😂 Rire",pleurer:"😢 Pleurer",trembler:"😨 Trembler",crier:"😱 Crier"};
 delete NOMS_ACTIONS.conduire;
-const EXPRESSIONS={neutre:"Neutre",content:"Content",surpris:"Surpris",fache:"Fâché",triste:"Triste",peur:"Apeuré"};
+const EXPRESSIONS={neutre:"Neutre",content:"Content",surpris:"Surpris",fache:"Fâché",triste:"Triste",peur:"Apeuré",dodo:"😴 Endormi"};
 
 function getAction(id){
   return ACTIONS[id]||(projet&&projet.actionsPerso&&projet.actionsPerso[id])||ACTIONS.immobile;
@@ -346,8 +355,14 @@ function dessinerPersonnage(ctx,x,solY,H,pose,style,opts){
   const expr=opts.expression||'neutre';
   const grands=(expr==='surpris'||expr==='peur');
   const surY=grands?R*.10:0;
-  ctx.beginPath();ctx.arc(fx-f*R*.26,fy-R*.12-surY,oeil*(grands?1.35:1),0,TAU);ctx.fill();
-  ctx.beginPath();ctx.arc(fx+f*R*.30,fy-R*.12-surY,oeil*(grands?1.35:1),0,TAU);ctx.fill();
+  if(expr==='dodo'){
+    ctx.lineWidth=lw*.32;
+    ctx.beginPath();ctx.arc(fx-f*R*.26,fy-R*.10,R*.11,.15*Math.PI,.85*Math.PI);ctx.stroke();
+    ctx.beginPath();ctx.arc(fx+f*R*.30,fy-R*.10,R*.11,.15*Math.PI,.85*Math.PI);ctx.stroke();
+  }else{
+    ctx.beginPath();ctx.arc(fx-f*R*.26,fy-R*.12-surY,oeil*(grands?1.35:1),0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(fx+f*R*.30,fy-R*.12-surY,oeil*(grands?1.35:1),0,TAU);ctx.fill();
+  }
   ctx.lineWidth=lw*.32;
   if(expr==='fache'){
     ctx.beginPath();ctx.moveTo(fx-f*R*.44,fy-R*.40);ctx.lineTo(fx-f*R*.12,fy-R*.26);ctx.stroke();
@@ -406,6 +421,16 @@ function dessinerPersonnage(ctx,x,solY,H,pose,style,opts){
       ctx.beginPath();ctx.ellipse(tete.x+side*R*(1.1+age*.5),tete.y-R*.6+age*R*1.2,R*.075,R*.115,side*.4,0,TAU);ctx.fill();
     }
     ctx.globalAlpha=1;
+  }
+  if(fxId==='zzz'){
+    ctx.fillStyle='#4FA8FF';ctx.textAlign='center';
+    for(let k=0;k<3;k++){
+      const age=(t*.55+k*.33)%1;
+      ctx.globalAlpha=(1-age)*.9;
+      ctx.font=`800 ${Math.round(R*(.45+age*.5))}px Manrope,sans-serif`;
+      ctx.fillText('Z',tete.x+f*(R*1.2+age*R*1.6),tete.y-R*.8-age*R*2.0);
+    }
+    ctx.globalAlpha=1;ctx.textAlign='left';
   }
   if(fxId==='cri'){
     ctx.strokeStyle=ink;ctx.lineWidth=lw*.4;
@@ -788,10 +813,18 @@ function etatActeur(ac,tl){
     if(tl>=t2&&st.expression&&st.expression!=='')expr=st.expression;
     t2+=dd;if(st===item)break;
   }
+  // élévation (poser sur chaise, lit, meuble) — fixe ou animée par étape
+  let e0=+ac.eleve||0;
+  for(const st of ac.chrono){
+    if(st===item)break;
+    if(st.versEleve!=null&&st.versEleve!=='')e0=+st.versEleve;
+  }
+  const e1=(item.versEleve!=null&&item.versEleve!=='')?+item.versEleve:e0;
+  const eleve=lerp(e0,e1,u);
   const meta=getAction(item.action);
   if(meta.exprForce)expr=meta.exprForce;
   const phase=meta.boucle?phaseDe(item.action,tItem):phaseDe(item.action,Math.min(tItem,meta.periode));
-  return {action:item.action,phase,tItem,x:xNow,facing,expr,meta,item};
+  return {action:item.action,phase,tItem,x:xNow,facing,expr,meta,item,eleve};
 }
 function membresFoule(sc){
   if(sc._membres&&sc._n===sc.foule)return sc._membres;
@@ -1184,8 +1217,9 @@ function dessinerScene(sc,tl,solY){
     let bouche=(bouchesVoix[ac.id]!=null)?bouchesVoix[ac.id]:null;
     if(bouche==null&&st.meta.boucheCycle)
       bouche=st.meta.boucheCycle[Math.floor(st.tItem*6)%st.meta.boucheCycle.length];
-    dessinerOmbre(ctx,st.x*W,solY,H2,pose.dy,pose.rot);
-    const res=dessinerPersonnage(ctx,st.x*W,solY,H2,pose,perso.style,
+    const solYA=solY-(st.eleve||0)*Hc;
+    dessinerOmbre(ctx,st.x*W,solYA,H2,pose.dy,pose.rot);
+    const res=dessinerPersonnage(ctx,st.x*W,solYA,H2,pose,perso.style,
       {facing:st.facing,expression:st.expr,bouche,t:tl,fx:st.meta.fx,
        jitter:st.meta.jitter?1:0,vue:ac.vue||'profil',objet:ac.objet});
     tetes[ac.id]=res;
@@ -1556,6 +1590,11 @@ function rendreInspecteur(){
       insp.append(el('div',{class:'etiq'},'Position & orientation'));
       insp.append(el('div',{class:'rang'},el('label',{},'Départ X'),
         el('input',{type:'range',min:0,max:1,step:.01,value:ac.x,oninput:e=>{ac.x=+e.target.value;}})));
+      insp.append(el('div',{class:'rang'},el('label',{},'Élévation'),
+        el('input',{type:'range',min:0,max:.30,step:.005,value:ac.eleve||0,
+          oninput:e=>{ac.eleve=+e.target.value;}})));
+      insp.append(el('div',{class:'aide'},
+        'Pour asseoir ou coucher un personnage : pose une 🪑 chaise, un 🪵 banc ou un 🛏 lit dans la scène (onglet Scène), choisis l\'action S\'asseoir / 🛏 S\'allonger / 😴 Dormir, puis règle l\'Élévation jusqu\'à ce qu\'il soit posé dessus.'));
       insp.append(el('div',{class:'rang'},el('label',{},'Orientation'),
         selecteur({profil:'De profil',face:'De face'},ac.vue||'profil',v=>{ac.vue=v;})));
       insp.append(el('div',{class:'rang'},el('label',{},'Miroir'),
@@ -1595,6 +1634,13 @@ function rendreInspecteur(){
         b.append(el('div',{class:'rang'},el('label',{},'Zoom caméra'),
           el('input',{type:'checkbox',...(st.zoom?{checked:''}:{}),
             onchange:e=>{st.zoom=e.target.checked;}})));
+        const aEl=st.versEleve!=null&&st.versEleve!=='';
+        const rEl=el('div',{class:'rang'},el('label',{},'Monter/descendre'),
+          el('input',{type:'checkbox',...(aEl?{checked:''}:{}),onchange:e=>{
+            st.versEleve=e.target.checked?0.12:null;rendreInspecteur();}}));
+        if(aEl)rEl.append(el('input',{type:'range',min:0,max:.30,step:.005,value:st.versEleve,
+          oninput:e=>{st.versEleve=+e.target.value;}}));
+        b.append(rEl);
         insp.append(b);
       });
       insp.append(el('button',{style:'width:100%',onclick:()=>{
@@ -1814,6 +1860,36 @@ const PROPS={
     c.fillStyle='#3A3F55';c.fillRect(-s*.06,-s*.55,s*.12,s*.5);
     c.fillStyle='#8A8FBA';c.strokeStyle='#0D1026';c.lineWidth=s*.05;
     c.beginPath();c.arc(0,-s*.68,s*.2,0,Math.PI*2);c.fill();c.stroke();}},
+  lit:{nom:"🛏 Lit",tenable:false,dessiner(c,s){
+    // cadre + matelas + oreiller + tête de lit (vue de côté, base au sol)
+    c.strokeStyle='#0D1026';c.lineWidth=s*.05;
+    c.fillStyle='#7A5A38';
+    c.fillRect(-s*1.3,-s*.16,s*.12,s*.16);c.fillRect(s*1.18,-s*.16,s*.12,s*.16);
+    c.fillRect(-s*1.3,-s*.95,s*.12,s*.8); // tête de lit
+    c.fillStyle='#9A7448';c.fillRect(-s*1.3,-s*.5,s*2.6,s*.14);
+    c.fillStyle='#FFF';c.strokeRect;
+    c.beginPath();c.roundRect(-s*1.22,-s*.72,s*2.44,s*.24,s*.08);c.fill();c.stroke();
+    c.fillStyle='#4FA8FF';
+    c.beginPath();c.roundRect(-s*.3,-s*.70,s*1.5,s*.20,s*.06);c.fill();c.stroke();
+    c.fillStyle='#FFE9B0';
+    c.beginPath();c.roundRect(-s*1.14,-s*.84,s*.5,s*.2,s*.08);c.fill();c.stroke();}},
+  banc:{nom:"🪵 Banc",tenable:false,dessiner(c,s){
+    c.strokeStyle='#0D1026';c.lineWidth=s*.05;c.fillStyle='#9A7448';
+    c.beginPath();c.roundRect(-s*1.1,-s*.62,s*2.2,s*.14,s*.05);c.fill();c.stroke();
+    c.fillStyle='#7A5A38';
+    c.fillRect(-s*.95,-s*.48,s*.12,s*.48);c.fillRect(s*.83,-s*.48,s*.12,s*.48);}},
+  canape:{nom:"🛋 Canapé",tenable:false,dessiner(c,s){
+    c.strokeStyle='#0D1026';c.lineWidth=s*.05;c.fillStyle='#B96A4A';
+    c.beginPath();c.roundRect(-s*1.2,-s*1.0,s*2.4,s*.5,s*.12);c.fill();c.stroke(); // dossier
+    c.beginPath();c.roundRect(-s*1.2,-s*.62,s*2.4,s*.5,s*.12);c.fill();c.stroke(); // assise
+    c.fillStyle='#A05A3E';
+    c.beginPath();c.roundRect(-s*1.34,-s*.82,s*.26,s*.7,s*.1);c.fill();c.stroke();
+    c.beginPath();c.roundRect(s*1.08,-s*.82,s*.26,s*.7,s*.1);c.fill();c.stroke();}},
+  table:{nom:"🪟 Table",tenable:false,dessiner(c,s){
+    c.strokeStyle='#0D1026';c.lineWidth=s*.05;c.fillStyle='#9A7448';
+    c.beginPath();c.roundRect(-s*1.0,-s*.78,s*2.0,s*.12,s*.04);c.fill();c.stroke();
+    c.fillStyle='#7A5A38';
+    c.fillRect(-s*.88,-s*.66,s*.12,s*.66);c.fillRect(s*.76,-s*.66,s*.12,s*.66);}},
   epee:{nom:"🗡 Épée",tenable:true,dessiner(c,s){
     c.save();c.rotate(.4);
     c.fillStyle='#C8CCE8';c.strokeStyle='#0D1026';c.lineWidth=s*.04;

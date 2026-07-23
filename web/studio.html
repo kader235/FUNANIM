@@ -87,6 +87,7 @@
     overflow:hidden;white-space:nowrap;cursor:pointer;background:var(--signal)}
   .tl-bloc:hover{filter:brightness(1.1)}
   .tl-bloc.txt{background:#4FA8FF;color:#06121F;cursor:default}
+  .tl-bloc.son{background:#7BC96F;color:#0B2012;cursor:default}
   .tl-tete{position:absolute;top:6px;bottom:6px;width:2px;background:var(--corail);
     pointer-events:none;z-index:2;border-radius:2px}
   @media (max-width:900px){
@@ -108,6 +109,7 @@
   <button id="btnImporter">Importer</button>
   <button id="btnExporterJSON">Exporter JSON</button>
   <input type="file" id="fichierImport" accept=".json" style="display:none">
+  <input type="file" id="fichierAudio" accept="audio/*" style="display:none">
   <span class="pousse"></span>
   <button id="btnFilm">▶ Lire le film</button>
   <button id="btnExporterVideo" class="principal">⬇ Exporter la vidéo</button>
@@ -147,6 +149,7 @@
       <button data-ong="scene" class="actif">Scène</button>
       <button data-ong="acteurs">Acteurs</button>
       <button data-ong="textes">Textes</button>
+      <button data-ong="sons">Sons</button>
       <button data-ong="persos">Personnages</button>
     </div>
     <div id="inspecteur"></div>
@@ -504,12 +507,13 @@ function nouveauProjet(){
       {id:nid('p'),nom:"Kader",style:{couleur:"#14162B",genre:"homme",taille:1,epaisseur:1,accessoires:[]}},
       {id:nid('p'),nom:"Awa",style:{couleur:"#C2426B",genre:"femme",taille:.96,epaisseur:1,accessoires:[]}}
     ],
-    scenes:[]
+    scenes:[],
+    audios:[]
   };
 }
 function nouvelleScene(p){
   return {id:nid('s'),decor:"studio",meteo:false,foule:0,transition:"fondu",
-    acteurs:[],textes:[]};
+    acteurs:[],textes:[],sons:[]};
 }
 function nouvelActeur(persoId){
   return {id:nid('a'),personnageId:persoId,x:.3,miroir:false,
@@ -536,6 +540,12 @@ function dureeScene(sc){
     d=Math.max(d,s);
   }
   for(const tx of sc.textes)d=Math.max(d,(+tx.t||0)+(+tx.duree||0)+.2);
+  for(const ev of (sc.sons||[])){
+    let dd=.5;
+    if(ev.type==='sfx'&&SFX[ev.sfx])dd=SFX[ev.sfx].duree;
+    if(ev.type==='audio'){const au=(projet.audios||[]).find(a=>a.id===ev.audioId);if(au)dd=au.duree;}
+    d=Math.max(d,(+ev.t||0)+dd+.2);
+  }
   return d;
 }
 function dureeFilm(){return projet.scenes.reduce((s,sc)=>s+dureeScene(sc),0);}
@@ -576,7 +586,7 @@ function etatActeur(ac,tl){
   const meta=ACTIONS[item.action]||ACTIONS.immobile;
   if(meta.exprForce)expr=meta.exprForce;
   const phase=meta.boucle?phaseDe(item.action,tItem):phaseDe(item.action,Math.min(tItem,meta.periode));
-  return {action:item.action,phase,tItem,x:xNow,facing,expr,meta};
+  return {action:item.action,phase,tItem,x:xNow,facing,expr,meta,item};
 }
 function membresFoule(sc){
   if(sc._membres&&sc._n===sc.foule)return sc._membres;
@@ -592,6 +602,115 @@ function membresFoule(sc){
   sc._membres=m;sc._n=sc.foule;return m;
 }
 
+/* ---------------- AUDIO : effets synthétisés + imports ---------------- */
+let AC=null,ACdest=null,bruitBuf=null;
+function audioCtxGet(){
+  if(!AC){
+    AC=new (window.AudioContext||window.webkitAudioContext)();
+    ACdest=AC.createMediaStreamDestination();
+    const n=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);
+    const d=n.getChannelData(0);
+    for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+    bruitBuf=n;
+  }
+  if(AC.state==='suspended')AC.resume();
+  return AC;
+}
+document.addEventListener('pointerdown',()=>audioCtxGet(),{once:true});
+function sortie(g){g.connect(AC.destination);g.connect(ACdest);}
+function envG(g,t0,a,d,v){const p=g.gain;
+  p.setValueAtTime(0.0001,t0);p.linearRampToValueAtTime(Math.max(v,.001),t0+a);
+  p.exponentialRampToValueAtTime(.001,t0+a+d);}
+function osc(type,f0,t0,dur,v,f1){
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type=type;o.frequency.setValueAtTime(f0,t0);
+  if(f1)o.frequency.exponentialRampToValueAtTime(f1,t0+dur);
+  envG(g,t0,.008,dur,v);o.connect(g);sortie(g);o.start(t0);o.stop(t0+dur+.1);}
+function bruit(t0,dur,v,fType,f0,f1){
+  const src=AC.createBufferSource();src.buffer=bruitBuf;src.loop=true;
+  const fl=AC.createBiquadFilter();fl.type=fType;fl.frequency.setValueAtTime(f0,t0);
+  if(f1)fl.frequency.exponentialRampToValueAtTime(f1,t0+dur);
+  const g=AC.createGain();envG(g,t0,.01,dur,v);
+  src.connect(fl);fl.connect(g);sortie(g);src.start(t0);src.stop(t0+dur+.1);}
+const SFX={
+  rire:{nom:"😂 Rire",duree:.8,jouer:(t0,v)=>{for(let k=0;k<5;k++)osc('square',430-k*36,t0+k*.15,.09,v*.28);}},
+  pleurs:{nom:"😢 Pleurs",duree:1.3,jouer:(t0,v)=>{for(let k=0;k<3;k++)osc('sine',560,t0+k*.42,.34,v*.5,300);}},
+  cri:{nom:"😱 Cri",duree:.7,jouer:(t0,v)=>{
+    const o=AC.createOscillator(),g=AC.createGain(),l=AC.createOscillator(),lg=AC.createGain();
+    o.type='sawtooth';o.frequency.setValueAtTime(650,t0);o.frequency.linearRampToValueAtTime(880,t0+.5);
+    l.frequency.value=9;lg.gain.value=45;l.connect(lg);lg.connect(o.frequency);
+    envG(g,t0,.02,.65,v*.4);o.connect(g);sortie(g);
+    o.start(t0);o.stop(t0+.8);l.start(t0);l.stop(t0+.8);}},
+  foule:{nom:"🎉 Acclamations",duree:1.5,jouer:(t0,v)=>{
+    bruit(t0,1.4,v*.5,'bandpass',900,1400);
+    for(let k=0;k<12;k++)bruit(t0+.1+Math.random()*1.0,.05,v*.35,'highpass',2200);}},
+  applaudir:{nom:"👏 Applaudissements",duree:1.4,jouer:(t0,v)=>{
+    for(let k=0;k<16;k++)bruit(t0+k*.08+Math.random()*.03,.04,v*.4,'highpass',1800);}},
+  punch:{nom:"👊 Coup",duree:.25,jouer:(t0,v)=>{
+    bruit(t0,.12,v*.8,'lowpass',420,120);osc('sine',110,t0,.18,v*.9,50);}},
+  boom:{nom:"💥 Boom",duree:.9,jouer:(t0,v)=>{
+    osc('sine',72,t0,.8,v,38);bruit(t0,.5,v*.5,'lowpass',300,60);}},
+  whoosh:{nom:"💨 Whoosh",duree:.45,jouer:(t0,v)=>{bruit(t0,.4,v*.6,'bandpass',400,3200);}},
+  boing:{nom:"🌀 Boing",duree:.5,jouer:(t0,v)=>{
+    const o=AC.createOscillator(),g=AC.createGain(),l=AC.createOscillator(),lg=AC.createGain();
+    o.type='triangle';o.frequency.setValueAtTime(340,t0);o.frequency.exponentialRampToValueAtTime(75,t0+.45);
+    l.frequency.value=18;lg.gain.value=30;l.connect(lg);lg.connect(o.frequency);
+    envG(g,t0,.01,.45,v*.7);o.connect(g);sortie(g);
+    o.start(t0);o.stop(t0+.55);l.start(t0);l.stop(t0+.55);}},
+  pop:{nom:"🫧 Pop",duree:.15,jouer:(t0,v)=>{osc('sine',620,t0,.12,v*.7,150);}},
+  sifflet_haut:{nom:"🎵 Sifflet ↑",duree:.5,jouer:(t0,v)=>{osc('sine',320,t0,.45,v*.5,1250);}},
+  sifflet_bas:{nom:"🎵 Sifflet ↓ (chute)",duree:.6,jouer:(t0,v)=>{osc('sine',1250,t0,.55,v*.5,240);}},
+  tada:{nom:"✨ Ta-da !",duree:.7,jouer:(t0,v)=>{
+    osc('triangle',523,t0,.5,v*.4);osc('triangle',659,t0+.08,.45,v*.4);osc('triangle',784,t0+.16,.5,v*.45);}},
+  ding:{nom:"🔔 Ding",duree:.6,jouer:(t0,v)=>{osc('sine',880,t0,.55,v*.5);osc('sine',1760,t0,.3,v*.15);}},
+  suspense:{nom:"�In Suspense",duree:1.6,jouer:(t0,v)=>{
+    osc('sawtooth',65,t0,1.5,v*.3);osc('sawtooth',66,t0,1.5,v*.3);}}
+};
+SFX.suspense.nom="🫣 Suspense";
+function jouerEvenement(ev){
+  audioCtxGet();
+  const v=ev.volume==null?1:+ev.volume;
+  if(ev.type==='sfx'&&SFX[ev.sfx])SFX[ev.sfx].jouer(AC.currentTime+.02,v);
+  else if(ev.type==='audio'){
+    const au=(projet.audios||[]).find(a=>a.id===ev.audioId);
+    if(au&&au._buffer){
+      const src=AC.createBufferSource();src.buffer=au._buffer;
+      const g=AC.createGain();g.gain.value=v;
+      src.connect(g);sortie(g);src.start();
+    }
+  }
+}
+async function importerAudio(fichier){
+  audioCtxGet();
+  if(fichier.size>4_000_000){alert("Fichier trop lourd (max ~4 Mo pour rester dans le JSON).");return;}
+  const buf=await fichier.arrayBuffer();
+  let ab;try{ab=await AC.decodeAudioData(buf.slice(0));}
+  catch(e){alert("Format audio non reconnu.");return;}
+  const ch=ab.getChannelData(0),pas=Math.floor(ab.sampleRate*.05);
+  const rms=[];let maxR=1e-6;
+  for(let i=0;i<ch.length;i+=pas){
+    let sm=0,n=0;
+    for(let j=i;j<Math.min(i+pas,ch.length);j++){sm+=ch[j]*ch[j];n++;}
+    const r=Math.sqrt(sm/Math.max(n,1));rms.push(r);if(r>maxR)maxR=r;
+  }
+  const bouche=rms.map(r=>{const q=r/maxR;return q<.12?0:q<.32?1:q<.6?2:3;});
+  const dataURL=await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.readAsDataURL(fichier);});
+  projet.audios=projet.audios||[];
+  projet.audios.push({id:nid('au'),nom:fichier.name.replace(/\.[^.]+$/,''),
+    duree:ab.duration,bouche,data:dataURL,_buffer:ab});
+  rendreInspecteur();
+}
+async function rechargerBuffers(){
+  audioCtxGet();
+  for(const au of (projet.audios||[])){
+    if(au._buffer||!au.data)continue;
+    try{
+      const r=await fetch(au.data);const b=await r.arrayBuffer();
+      au._buffer=await AC.decodeAudioData(b);
+    }catch(e){}
+  }
+}
+
 /* ---------------- LECTURE / DESSIN ---------------- */
 const cv=document.getElementById('scene'),ctx=cv.getContext('2d');
 const W=cv.width,Hc=cv.height;
@@ -603,6 +722,36 @@ let exportRec=null,exportChunks=[];
 function persoParId(id){return projet.personnages.find(p=>p.id===id);}
 
 function dessinerScene(sc,tl,solY){
+  // zoom caméra : première étape active marquée "zoom"
+  let zoomCam=null;
+  for(const ac of sc.acteurs){
+    const st=etatActeur(ac,tl);
+    if(st&&st.item&&st.item.zoom){
+      const p=persoParId(ac.personnageId);if(!p)continue;
+      const H2=Hc*.40*(p.style.taille||1);
+      const dI=Math.max(.2,+st.item.duree||0);
+      const ramp=easeIO(clamp(Math.min(st.tItem/.35,(dI-st.tItem)/.35,1),0,1));
+      zoomCam={x:st.x*W,y:solY-H2*.80,k:1+.95*ramp};
+      break;
+    }
+  }
+  ctx.save();
+  if(zoomCam){
+    ctx.translate(zoomCam.x,zoomCam.y);ctx.scale(zoomCam.k,zoomCam.k);
+    ctx.translate(-zoomCam.x,-zoomCam.y);
+  }
+  // synchronisation labiale : audios assignés comme voix
+  const bouchesVoix={};
+  for(const ev of (sc.sons||[])){
+    if(ev.type==='audio'&&ev.voixDe){
+      const au=(projet.audios||[]).find(a=>a.id===ev.audioId);
+      if(au&&au.bouche){
+        const tv=tl-(+ev.t||0);
+        if(tv>=0&&tv<au.duree)
+          bouchesVoix[ev.voixDe]=au.bouche[Math.floor(tv/.05)]||0;
+      }
+    }
+  }
   DECORS[sc.decor](ctx,W,Hc,solY);
   const tetes={};
   let shake=false;
@@ -629,8 +778,8 @@ function dessinerScene(sc,tl,solY){
     const perso=persoParId(ac.personnageId);if(!perso)continue;
     const H2=Hc*.40*(perso.style.taille||1);
     const pose=poseA(st.action,st.phase);
-    let bouche=null;
-    if(st.meta.boucheCycle)
+    let bouche=(bouchesVoix[ac.id]!=null)?bouchesVoix[ac.id]:null;
+    if(bouche==null&&st.meta.boucheCycle)
       bouche=st.meta.boucheCycle[Math.floor(st.tItem*6)%st.meta.boucheCycle.length];
     dessinerOmbre(ctx,st.x*W,solY,H2,pose.dy,pose.rot);
     const res=dessinerPersonnage(ctx,st.x*W,solY,H2,pose,perso.style,
@@ -666,8 +815,25 @@ function dessinerScene(sc,tl,solY){
     ctx.restore();
   }
   ctx.restore();
+  ctx.restore(); // zoom caméra
 }
 
+let prevLect={mode:null,scene:-1,tl:0};
+function programmerSons(sc,idx){
+  return function(tlNow){
+    if(!enLecture){prevLect={mode:modeLect,scene:idx,tl:tlNow};return;}
+    if(prevLect.mode!==modeLect||prevLect.scene!==idx){
+      prevLect={mode:modeLect,scene:idx,tl:tlNow};return;
+    }
+    const tlPrev=prevLect.tl;
+    for(const ev of (sc.sons||[])){
+      const te=+ev.t||0;
+      const joue=(tlNow>=tlPrev)?(te>tlPrev&&te<=tlNow):(te>tlPrev||te<=tlNow);
+      if(joue&&AC)jouerEvenement(ev);
+    }
+    prevLect={mode:modeLect,scene:idx,tl:tlNow};
+  };
+}
 function dessiner(){
   const solY=Hc*.86;
   if(projet.scenes.length===0){
@@ -681,6 +847,7 @@ function dessiner(){
     const sc=projet.scenes[clamp(selScene,0,projet.scenes.length-1)];
     const d=dureeScene(sc);
     const tl=t%d;
+    programmerSons(sc,selScene)(tl);
     dessinerScene(sc,tl,solY);
     majBarre(tl,d);
     majTete(tl/d);
@@ -693,6 +860,7 @@ function dessiner(){
       acc+=d;idx=i;tl=d;
     }
     const sc=projet.scenes[idx];
+    programmerSons(sc,1000+idx)(tl);
     dessinerScene(sc,tl,solY);
     // transitions fondu
     const d=dureeScene(sc),td=.45;
@@ -740,7 +908,10 @@ function importerJSON(fichier){
     const p=JSON.parse(r.result);
     if(!p.scenes||!p.personnages)throw 0;
     projet=p;selScene=0;selActeur=-1;t=0;modeLect='scene';
+    projet.audios=projet.audios||[];
+    for(const sc2 of projet.scenes)sc2.sons=sc2.sons||[];
     document.getElementById('titreProjet').value=projet.meta.titre||'Projet';
+    rechargerBuffers();
     toutRedessiner();
   }catch(e){alert("Fichier de projet invalide.");}};
   r.readAsText(fichier);
@@ -749,7 +920,9 @@ function exporterVideo(){
   if(projet.scenes.length===0){alert("Ajoute au moins une scène.");return;}
   if(!('MediaRecorder' in window)){alert("Export non supporté par ce navigateur.");return;}
   modeLect='film';t=0;enLecture=true;
+  audioCtxGet();
   const flux=cv.captureStream(30);
+  for(const tr of ACdest.stream.getAudioTracks())flux.addTrack(tr);
   let type='video/webm;codecs=vp9';
   if(!MediaRecorder.isTypeSupported(type))type='video/webm';
   exportChunks=[];
@@ -845,6 +1018,21 @@ function rendreTimeline(){
     });
     tl.append(el('div',{class:'tl-piste'},el('div',{class:'tl-nom'},'Textes'),rail));
   }
+  if((sc.sons||[]).length){
+    const rail=el('div',{class:'tl-rail'});
+    const d2=d;
+    sc.sons.forEach(ev=>{
+      const t0=+ev.t||0;
+      let dd=.5,nom='son';
+      if(ev.type==='sfx'&&SFX[ev.sfx]){dd=SFX[ev.sfx].duree;nom=SFX[ev.sfx].nom;}
+      if(ev.type==='audio'){const au=(projet.audios||[]).find(a=>a.id===ev.audioId);
+        if(au){dd=au.duree;nom='🎧 '+au.nom;}}
+      rail.append(el('div',{class:'tl-bloc son',
+        style:`left:${(t0/d2*100).toFixed(2)}%;width:${Math.max(dd/d2*100,3).toFixed(2)}%`,
+        title:nom+' · '+t0.toFixed(1)+' s'},nom));
+    });
+    tl.append(el('div',{class:'tl-piste'},el('div',{class:'tl-nom'},'Sons'),rail));
+  }
   if(!sc.acteurs.length&&!sc.textes.length)
     tl.append(el('div',{class:'aide'},"Ajoute des acteurs : leurs étapes s'aligneront ici dans le temps."));
   tl.append(el('div',{class:'tl-tete',id:'tlTete'}));
@@ -932,6 +1120,9 @@ function rendreInspecteur(){
         b.append(rDest);
         b.append(el('div',{class:'rang'},el('label',{},'Expression'),
           selecteur(EXPRESSIONS,st.expression||'neutre',v=>{st.expression=v;})));
+        b.append(el('div',{class:'rang'},el('label',{},'Zoom caméra'),
+          el('input',{type:'checkbox',...(st.zoom?{checked:''}:{}),
+            onchange:e=>{st.zoom=e.target.checked;}})));
         insp.append(b);
       });
       insp.append(el('button',{style:'width:100%',onclick:()=>{
@@ -966,6 +1157,58 @@ function rendreInspecteur(){
     insp.append(el('button',{style:'width:100%',onclick:()=>{
       sc.textes.push({id:nid('t'),type:'bulle',contenu:'Salut !',t:0,duree:2,
         acteur:sc.acteurs[0]?.id});rendreInspecteur();rendreScenes();rendreTimeline();}},'+ Ajouter un texte'));
+  }
+
+  if(ongletActif==='sons'){
+    sc.sons=sc.sons||[];projet.audios=projet.audios||[];
+    insp.append(el('div',{class:'etiq'},'Sons de la scène'));
+    const optsSFX={};for(const k in SFX)optsSFX[k]=SFX[k].nom;
+    sc.sons.forEach((ev,i)=>{
+      const b=el('div',{class:'bloc'});
+      b.append(el('div',{class:'tete'},ev.type==='sfx'?'Effet sonore':'Audio importé',
+        el('button',{class:'mini danger sup',onclick:()=>{
+          sc.sons.splice(i,1);rendreInspecteur();rendreScenes();rendreTimeline();}},'✕')));
+      if(ev.type==='sfx'){
+        b.append(el('div',{class:'rang'},el('label',{},'Effet'),
+          selecteur(optsSFX,ev.sfx,v=>{ev.sfx=v;rendreTimeline();}),
+          el('button',{class:'mini',onclick:()=>jouerEvenement(ev)},'▶')));
+      }else{
+        const optsAu={};projet.audios.forEach(a=>optsAu[a.id]=a.nom);
+        b.append(el('div',{class:'rang'},el('label',{},'Audio'),
+          selecteur(optsAu,ev.audioId,v=>{ev.audioId=v;rendreScenes();rendreTimeline();}),
+          el('button',{class:'mini',onclick:()=>jouerEvenement(ev)},'▶')));
+        const optsVoix={'':'(aucune bouche)'};
+        sc.acteurs.forEach(a2=>{const p=persoParId(a2.personnageId);optsVoix[a2.id]=p?'Bouche de '+p.nom:'?';});
+        b.append(el('div',{class:'rang'},el('label',{},'Lip sync'),
+          selecteur(optsVoix,ev.voixDe||'',v=>{ev.voixDe=v||null;})));
+      }
+      b.append(el('div',{class:'rang'},el('label',{},'Début (s)'),
+        el('input',{type:'number',min:0,step:.1,value:ev.t,
+          oninput:e=>{ev.t=+e.target.value;rendreScenes();rendreTimeline();}}),
+        el('label',{},'Volume'),
+        el('input',{type:'range',min:0,max:1,step:.05,value:ev.volume==null?1:ev.volume,
+          oninput:e=>{ev.volume=+e.target.value;}})));
+      insp.append(b);
+    });
+    insp.append(el('div',{class:'rang'},
+      el('button',{style:'flex:1',onclick:()=>{
+        sc.sons.push({id:nid('ev'),type:'sfx',sfx:'pop',t:0,volume:1});
+        rendreInspecteur();rendreScenes();rendreTimeline();}},'+ Effet sonore'),
+      el('button',{style:'flex:1',onclick:()=>{
+        if(!projet.audios.length){alert('Importe d\'abord un son (bouton ci-dessous).');return;}
+        sc.sons.push({id:nid('ev'),type:'audio',audioId:projet.audios[0].id,t:0,volume:1,voixDe:null});
+        rendreInspecteur();rendreScenes();rendreTimeline();}},'+ Audio importé')));
+    insp.append(el('div',{class:'etiq'},'Sons importés du projet'));
+    projet.audios.forEach((au,i)=>{
+      insp.append(el('div',{class:'carte'},
+        el('span',{},au.nom),el('span',{class:'num'},au.duree.toFixed(1)+'s'),
+        el('button',{class:'mini danger sup',onclick:()=>{
+          projet.audios.splice(i,1);rendreInspecteur();}},'✕')));
+    });
+    insp.append(el('button',{style:'width:100%',onclick:()=>$('fichierAudio').click()},
+      '⬆ Importer un son (mp3 / wav / ogg)'));
+    insp.append(el('div',{class:'aide',style:'margin-top:8px'},
+      'Astuce style Rico : importe un son meme ou une réplique vocale, assigne le "lip sync" à un personnage — sa bouche suivra automatiquement le son. Les effets 😂😱👏 sont générés par le moteur, aucun fichier nécessaire.'));
   }
 
   if(ongletActif==='persos'){
@@ -1020,6 +1263,7 @@ $('btnNouveau').addEventListener('click',()=>{
 $('btnExporterJSON').addEventListener('click',exporterJSON);
 $('btnImporter').addEventListener('click',()=>$('fichierImport').click());
 $('fichierImport').addEventListener('change',e=>{if(e.target.files[0])importerJSON(e.target.files[0]);e.target.value='';});
+$('fichierAudio').addEventListener('change',e=>{if(e.target.files[0])importerAudio(e.target.files[0]);e.target.value='';});
 $('btnExporterVideo').addEventListener('click',()=>{if(exportRec)terminerExport();else exporterVideo();});
 document.querySelectorAll('.onglets button').forEach(b=>{
   b.addEventListener('click',()=>{

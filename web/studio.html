@@ -72,6 +72,23 @@
   .chipsScenes{display:flex;gap:6px;flex-wrap:wrap}
   .chipsScenes button{border-radius:99px;font-size:11.5px;padding:5px 11px}
   .aide{font-size:11.5px;color:var(--texte2);line-height:1.5}
+  a.lien{color:var(--texte2);font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap}
+  a.lien:hover{color:var(--signal)}
+  /* ---- timeline multi-pistes ---- */
+  .timeline{background:var(--panneau);border:1px solid var(--ligne);border-radius:10px;
+    padding:10px;position:relative}
+  .tl-piste{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .tl-piste:last-child{margin-bottom:0}
+  .tl-nom{width:70px;font-size:11px;color:var(--texte2);font-weight:700;flex:none;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tl-rail{position:relative;height:26px;flex:1;background:var(--encre);border-radius:6px}
+  .tl-bloc{position:absolute;top:2px;bottom:2px;border-radius:5px;font-size:10.5px;
+    font-weight:700;color:#171400;display:flex;align-items:center;padding:0 6px;
+    overflow:hidden;white-space:nowrap;cursor:pointer;background:var(--signal)}
+  .tl-bloc:hover{filter:brightness(1.1)}
+  .tl-bloc.txt{background:#4FA8FF;color:#06121F;cursor:default}
+  .tl-tete{position:absolute;top:6px;bottom:6px;width:2px;background:var(--corail);
+    pointer-events:none;z-index:2;border-radius:2px}
   @media (max-width:900px){
     body{overflow:auto}
     .atelier{grid-template-columns:1fr;grid-auto-rows:auto}
@@ -83,6 +100,9 @@
 
 <div class="outils">
   <div class="marque">FUN<em>ANIM</em> Studio</div>
+  <a class="lien" href="index.html">Film démo</a>
+  <a class="lien" href="toon.html">Stick vs Toon</a>
+  <a class="lien" href="fluide.html">Animation fluide</a>
   <input type="text" id="titreProjet" value="Ma première vidéo">
   <button id="btnNouveau">Nouveau</button>
   <button id="btnImporter">Importer</button>
@@ -112,10 +132,13 @@
       <div class="temps" id="lblTemps">0.0 s</div>
     </div>
     <div class="chipsScenes" id="chipsScenes"></div>
-    <div class="aide">Astuce : la lecture boucle sur la <b>scène sélectionnée</b>.
-      « ▶ Lire le film » joue toutes les scènes avec les transitions.
-      « Exporter la vidéo » enregistre le film complet en fichier <b>.webm</b> (l'export MP4 HD
-      avec son arrivera avec le rendu serveur).</div>
+    <div class="timeline" id="timeline"></div>
+    <div class="aide">La <b>timeline</b> montre toutes les pistes de la scène alignées dans le
+      temps — c'est elle qui permet de <b>synchroniser les personnages entre eux</b> (clique un
+      bloc jaune pour éditer directement cette étape ; les blocs bleus sont les textes).
+      Pour faire attendre un personnage avant d'agir, ajoute-lui une étape « Immobile ».
+      « ▶ Lire le film » joue toutes les scènes ; « Exporter la vidéo » enregistre un fichier
+      <b>.webm</b> (le MP4 HD avec son arrivera avec le rendu serveur).</div>
   </div>
 
   <!-- ===== INSPECTEUR ===== -->
@@ -616,6 +639,7 @@ function dessinerScene(sc,tl,solY){
   }
   if(sc.meteo)dessinerPluie(ctx,W,Hc,solY,tl);
   if(sc.decor==='boite')dessinerLumieresBoite(ctx,W,Hc,tl);
+  const bullesPosees=[];
   for(const tx of sc.textes){
     const t0=+tx.t||0,d=+tx.duree||1;
     if(tl<t0||tl>t0+d)continue;
@@ -623,7 +647,12 @@ function dessinerScene(sc,tl,solY){
     ctx.save();ctx.globalAlpha=a;
     if(tx.type==='bulle'&&tetes[tx.acteur]){
       const h=tetes[tx.acteur];
-      dessinerBulle(ctx,h.tete.x,h.tete.y-h.R,tx.contenu||'…');
+      let by=h.tete.y-h.R;
+      for(const bp of bullesPosees){
+        if(Math.abs(h.tete.x-bp.x)<340&&Math.abs(by-bp.y)<74)by=bp.y-78;
+      }
+      bullesPosees.push({x:h.tete.x,y:by});
+      dessinerBulle(ctx,h.tete.x,by,tx.contenu||'…');
     }else if(tx.type==='titre'){
       ctx.fillStyle='#FFD60A';ctx.textAlign='center';
       ctx.font='800 72px Manrope,sans-serif';
@@ -654,6 +683,7 @@ function dessiner(){
     const tl=t%d;
     dessinerScene(sc,tl,solY);
     majBarre(tl,d);
+    majTete(tl/d);
   }else{
     const total=dureeFilm();
     let acc=0,idx=0,tl=t;
@@ -675,6 +705,7 @@ function dessiner(){
     if(voile>0){ctx.fillStyle=`rgba(13,16,38,${clamp(voile,0,1)})`;ctx.fillRect(0,0,W,Hc);}
     majBarre(t,total);
     majChips(idx);
+    majTete(null);
   }
 }
 function boucle(now){
@@ -781,6 +812,50 @@ function rendreScenes(){
       toutRedessiner();}},'Scène '+(i+1)));
   });
 }
+function rendreTimeline(){
+  const tl=$('timeline');tl.innerHTML='';
+  const sc=projet.scenes[selScene];
+  if(!sc){tl.style.display='none';return;}
+  tl.style.display='';
+  const d=dureeScene(sc);
+  sc.acteurs.forEach((ac,i)=>{
+    const p=persoParId(ac.personnageId);
+    const rail=el('div',{class:'tl-rail'});
+    let t0=0;
+    ac.chrono.forEach(st=>{
+      const dd=Math.max(.2,+st.duree||0);
+      rail.append(el('div',{class:'tl-bloc',
+        style:`left:${(t0/d*100).toFixed(2)}%;width:${Math.max(dd/d*100,3).toFixed(2)}%`,
+        title:(NOMS_ACTIONS[st.action]||st.action)+' · '+t0.toFixed(1)+' s → '+(t0+dd).toFixed(1)+' s',
+        onclick:()=>{ongletActif='acteurs';selActeur=i;
+          document.querySelectorAll('.onglets button').forEach(x=>x.classList.toggle('actif',x.dataset.ong==='acteurs'));
+          rendreInspecteur();}},
+        NOMS_ACTIONS[st.action]||st.action));
+      t0+=dd;
+    });
+    tl.append(el('div',{class:'tl-piste'},el('div',{class:'tl-nom'},p?p.nom:'?'),rail));
+  });
+  if(sc.textes.length){
+    const rail=el('div',{class:'tl-rail'});
+    sc.textes.forEach(tx=>{
+      const t0=+tx.t||0,dd=+tx.duree||1;
+      rail.append(el('div',{class:'tl-bloc txt',
+        style:`left:${(t0/d*100).toFixed(2)}%;width:${Math.max(dd/d*100,3).toFixed(2)}%`,
+        title:(tx.contenu||'')+' · '+t0.toFixed(1)+' s'},tx.contenu||'…'));
+    });
+    tl.append(el('div',{class:'tl-piste'},el('div',{class:'tl-nom'},'Textes'),rail));
+  }
+  if(!sc.acteurs.length&&!sc.textes.length)
+    tl.append(el('div',{class:'aide'},"Ajoute des acteurs : leurs étapes s'aligneront ici dans le temps."));
+  tl.append(el('div',{class:'tl-tete',id:'tlTete'}));
+}
+function majTete(frac){
+  const te=document.getElementById('tlTete');
+  if(!te)return;
+  if(frac==null){te.style.opacity='0';return;}
+  te.style.opacity='1';
+  te.style.left=`calc(86px + ${clamp(frac,0,1)} * (100% - 96px))`;
+}
 let chipsFilmIdx=-1;
 function majChips(idx){
   if(idx===chipsFilmIdx)return;chipsFilmIdx=idx;
@@ -815,14 +890,18 @@ function rendreInspecteur(){
       const p=persoParId(ac.personnageId);
       insp.append(el('div',{class:'carte'+(i===selActeur?' sel':''),onclick:()=>{selActeur=i;rendreInspecteur();}},
         el('span',{},p?p.nom:'?'),
-        el('button',{class:'mini danger sup',onclick:ev=>{ev.stopPropagation();
-          sc.acteurs.splice(i,1);selActeur=-1;rendreInspecteur();}},'✕')));
+        el('button',{class:'mini sup',title:'Passer derrière',onclick:ev=>{ev.stopPropagation();
+          if(i>0){[sc.acteurs[i-1],sc.acteurs[i]]=[sc.acteurs[i],sc.acteurs[i-1]];selActeur=i-1;rendreInspecteur();rendreTimeline();}}},'↑'),
+        el('button',{class:'mini danger',onclick:ev=>{ev.stopPropagation();
+          sc.acteurs.splice(i,1);selActeur=-1;rendreInspecteur();rendreTimeline();}},'✕')));
+      });
+      if(false)sc.acteurs.forEach((ac,i)=>{
     });
     const persoOpts={};projet.personnages.forEach(p=>persoOpts[p.id]=p.nom);
     let choix=projet.personnages[0]?.id;
     insp.append(el('div',{class:'rang'},
       selecteur(persoOpts,choix,v=>choix=v),
-      el('button',{class:'mini',onclick:()=>{if(choix){sc.acteurs.push(nouvelActeur(choix));selActeur=sc.acteurs.length-1;rendreInspecteur();}}},'+ Ajouter à la scène')));
+      el('button',{class:'mini',onclick:()=>{if(choix){sc.acteurs.push(nouvelActeur(choix));selActeur=sc.acteurs.length-1;rendreInspecteur();rendreTimeline();}}},'+ Ajouter à la scène')));
 
     const ac=sc.acteurs[selActeur];
     if(ac){
@@ -833,15 +912,17 @@ function rendreInspecteur(){
         el('input',{type:'checkbox',...(ac.miroir?{checked:''}:{}),onchange:e=>{ac.miroir=e.target.checked;}})));
 
       insp.append(el('div',{class:'etiq'},'Chronologie (les boutons !)'));
+      let tCumul=0;
       ac.chrono.forEach((st,j)=>{
+        const tDebut=tCumul;tCumul+=Math.max(.2,+st.duree||0);
         const b=el('div',{class:'bloc'});
-        b.append(el('div',{class:'tete'},'Étape '+(j+1),
-          el('button',{class:'mini sup',onclick:()=>{if(j>0){[ac.chrono[j-1],ac.chrono[j]]=[ac.chrono[j],ac.chrono[j-1]];rendreInspecteur();}}},'↑'),
-          el('button',{class:'mini danger',onclick:()=>{ac.chrono.splice(j,1);rendreInspecteur();}},'✕')));
+        b.append(el('div',{class:'tete'},'Étape '+(j+1)+' · débute à '+tDebut.toFixed(1)+' s',
+          el('button',{class:'mini sup',onclick:()=>{if(j>0){[ac.chrono[j-1],ac.chrono[j]]=[ac.chrono[j],ac.chrono[j-1]];rendreInspecteur();rendreTimeline();}}},'↑'),
+          el('button',{class:'mini danger',onclick:()=>{ac.chrono.splice(j,1);rendreInspecteur();rendreScenes();rendreTimeline();}},'✕')));
         b.append(el('div',{class:'rang'},el('label',{},'Action'),
-          selecteur(NOMS_ACTIONS,st.action,v=>{st.action=v;})));
+          selecteur(NOMS_ACTIONS,st.action,v=>{st.action=v;rendreScenes();rendreTimeline();})));
         b.append(el('div',{class:'rang'},el('label',{},'Durée (s)'),
-          el('input',{type:'number',min:.3,step:.1,value:st.duree,oninput:e=>{st.duree=+e.target.value;rendreScenes();}})));
+          el('input',{type:'number',min:.3,step:.1,value:st.duree,oninput:e=>{st.duree=+e.target.value;rendreScenes();rendreTimeline();}})));
         const aDest=st.versX!=null&&st.versX!=='';
         const rDest=el('div',{class:'rang'},el('label',{},'Se déplacer'),
           el('input',{type:'checkbox',...(aDest?{checked:''}:{}),onchange:e=>{
@@ -854,7 +935,7 @@ function rendreInspecteur(){
         insp.append(b);
       });
       insp.append(el('button',{style:'width:100%',onclick:()=>{
-        ac.chrono.push({action:'immobile',duree:2,versX:null,expression:''});rendreInspecteur();rendreScenes();}},'+ Ajouter une étape'));
+        ac.chrono.push({action:'immobile',duree:2,versX:null,expression:''});rendreInspecteur();rendreScenes();rendreTimeline();}},'+ Ajouter une étape'));
     } else {
       insp.append(el('div',{class:'aide'},'Sélectionne un acteur pour éditer sa chronologie.'));
     }
@@ -865,16 +946,16 @@ function rendreInspecteur(){
     sc.textes.forEach((tx,i)=>{
       const b=el('div',{class:'bloc'});
       b.append(el('div',{class:'tete'},{bulle:'💬 Bulle',soustitre:'Sous-titre',titre:'Titre'}[tx.type]||'Texte',
-        el('button',{class:'mini danger sup',onclick:()=>{sc.textes.splice(i,1);rendreInspecteur();}},'✕')));
+        el('button',{class:'mini danger sup',onclick:()=>{sc.textes.splice(i,1);rendreInspecteur();rendreScenes();rendreTimeline();}},'✕')));
       b.append(el('div',{class:'rang'},el('label',{},'Type'),
         selecteur({bulle:'Bulle',soustitre:'Sous-titre',titre:'Titre'},tx.type,v=>{tx.type=v;rendreInspecteur();})));
       b.append(el('div',{class:'rang'},el('label',{},'Contenu'),
         el('input',{type:'text',value:tx.contenu||'',style:'flex:1;min-width:100px',
           oninput:e=>{tx.contenu=e.target.value;}})));
       b.append(el('div',{class:'rang'},el('label',{},'Début (s)'),
-        el('input',{type:'number',min:0,step:.1,value:tx.t,oninput:e=>{tx.t=+e.target.value;rendreScenes();}}),
+        el('input',{type:'number',min:0,step:.1,value:tx.t,oninput:e=>{tx.t=+e.target.value;rendreScenes();rendreTimeline();}}),
         el('label',{},'Durée'),
-        el('input',{type:'number',min:.3,step:.1,value:tx.duree,oninput:e=>{tx.duree=+e.target.value;rendreScenes();}})));
+        el('input',{type:'number',min:.3,step:.1,value:tx.duree,oninput:e=>{tx.duree=+e.target.value;rendreScenes();rendreTimeline();}})));
       if(tx.type==='bulle'){
         const opts={};sc.acteurs.forEach(a2=>{const p=persoParId(a2.personnageId);opts[a2.id]=p?p.nom:'?';});
         b.append(el('div',{class:'rang'},el('label',{},'Qui parle ?'),
@@ -884,7 +965,7 @@ function rendreInspecteur(){
     });
     insp.append(el('button',{style:'width:100%',onclick:()=>{
       sc.textes.push({id:nid('t'),type:'bulle',contenu:'Salut !',t:0,duree:2,
-        acteur:sc.acteurs[0]?.id});rendreInspecteur();rendreScenes();}},'+ Ajouter un texte'));
+        acteur:sc.acteurs[0]?.id});rendreInspecteur();rendreScenes();rendreTimeline();}},'+ Ajouter un texte'));
   }
 
   if(ongletActif==='persos'){
@@ -912,7 +993,7 @@ function rendreInspecteur(){
   }
 }
 
-function toutRedessiner(){rendreScenes();rendreInspecteur();}
+function toutRedessiner(){rendreScenes();rendreInspecteur();rendreTimeline();}
 
 /* barre de lecture */
 function majBarre(tl,d){
